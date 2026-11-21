@@ -1,0 +1,44 @@
+name: Refresh metrics
+on:
+  workflow_dispatch:
+    inputs:
+      request_id:
+        description: Optional dashboard request ID
+        required: false
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: refresh-metrics
+  cancel-in-progress: false
+jobs:
+  refresh:
+    if: github.actor == github.repository_owner
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          path: runner
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: ${{ secrets.REPORT_REPOSITORY }}
+          ssh-key: ${{ secrets.REPORT_DEPLOY_KEY }}
+          path: data
+          ref: main
+      - name: Collect measurements
+        env:
+          BUFFER_READ_KEY: ${{ secrets.BUFFER_READ_KEY }}
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          REQUEST_ID: ${{ inputs.request_id }}
+          WORKFLOW_URL: ${{ github.server_url }}/${{ github.repository }}/actions/workflows/refresh.yml
+        run: node runner/collect.mjs
+      - name: Save private report
+        working-directory: data
+        run: |
+          git config user.name "Metrics updater"
+          git config user.email "metrics@users.noreply.github.com"
+          git add -- report.json README.md
+          git commit -qm "Refresh measurements"
+          git push -q origin HEAD:main
