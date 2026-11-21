@@ -44,7 +44,11 @@ async function loadReport(){
   $('report').hidden=false;$('login').hidden=true;$('refresh').hidden=false;return r;
 }
 document.querySelector('form').onsubmit=async e=>{e.preventDefault();repo=$('repo').value.trim();token=$('token').value.trim();try{
-  await loadReport();localStorage.setItem(key+'repo',repo);( $('remember').checked?localStorage:sessionStorage).setItem(key+'token',token);$('token').value='';$('status').textContent='';
+  await loadReport();localStorage.setItem(key+'repo',repo);
+  const remember=$('remember').checked;
+  (remember?sessionStorage:localStorage).removeItem(key+'token');
+  (remember?localStorage:sessionStorage).setItem(key+'token',token);
+  $('token').value='';$('status').textContent='';
 }catch(err){$('status').textContent=err.message;}};
 $('disconnect').onclick=()=>{sessionStorage.removeItem(key+'token');localStorage.removeItem(key+'token');location.reload();};
 $('refresh').onclick=async()=>{const button=$('refresh');button.disabled=true;const id=crypto.randomUUID();

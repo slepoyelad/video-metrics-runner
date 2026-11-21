@@ -133,7 +133,13 @@ async function instagramOwnerViews(channel,token,viaFacebook){
     const url=new URL('/v24.0/'+path,origin);
     url.search=new URLSearchParams(params);
     const res=await fetch(url,{headers:{Authorization:'Bearer '+token},redirect:'error',signal:AbortSignal.timeout(6000)});
-    if(!res.ok)throw Error('Instagram Insights unavailable');
+    if(!res.ok){
+      const body=await res.json().catch(()=>({}));
+      throw Object.assign(Error('Instagram Insights unavailable'),{reason:{
+        step:path==='me/accounts'?'pages':path.endsWith('/media')?'media':'insights',
+        status:res.status,code:Number(body.error?.code)||null,subcode:Number(body.error?.error_subcode)||null
+      }});
+    }
     return res.json();
   };
   let owner='me';
@@ -145,7 +151,7 @@ async function instagramOwnerViews(channel,token,viaFacebook){
       const account=list.data?.map(p=>p.instagram_business_account).find(a=>a?.username?.toLowerCase()===handle);
       if(account&&/^\d+$/.test(account.id)){owner=account.id;break;}
       const next=list.paging?.cursors?.after;
-      if(!list.paging?.next||!next||cursor===next)return;
+      if(!list.paging?.next||!next||cursor===next){channel.ownerCheck={step:'account-not-found'};return;}
       cursor=next;
     }while(cursor);
   }
@@ -161,15 +167,16 @@ async function instagramOwnerViews(channel,token,viaFacebook){
         const result=await json(media.id+'/insights',{metric:'views'});
         const metric=result.data?.find(m=>m.name==='views');
         const value=exactCount(metric?.values?.[0]?.value??metric?.total_value?.value);
-        if(value===null)continue;
+        if(value===null){channel.ownerCheck={step:'no-view-value'};continue;}
         post.metrics=post.metrics.filter(m=>m.type!=='views');
         post.metrics.push({type:'views',name:'views',unit:'count',value,source:'instagram-insights',observedAt:new Date().toISOString()});
-      }catch{}
+      }catch(error){channel.ownerCheck=error.reason||{step:'insights-unavailable'};}
     }
     const cursor=list.paging?.cursors?.after;
     if(!list.paging?.next||!cursor||cursor===after)break;
     after=cursor;
   }
+  if(pending.size&&!channel.ownerCheck)channel.ownerCheck={step:'reel-not-found'};
 }
 
 export async function enrichPublicMetrics(snapshot, previous, instagramToken, facebookToken) {
@@ -204,7 +211,9 @@ export async function enrichPublicMetrics(snapshot, previous, instagramToken, fa
       }
     }
     if(channel.service==='instagram'&&ownerToken){
-      try{await instagramOwnerViews(channel,ownerToken,Boolean(facebookToken));}catch{/* Retain the last measurement and its timestamp. */}
+      delete channel.ownerCheck;
+      try{await instagramOwnerViews(channel,ownerToken,Boolean(facebookToken));}
+      catch(error){channel.ownerCheck=error.reason||{step:'request-unavailable'};}
     }
   }));
   snapshot.fetchedAt=new Date().toISOString();
