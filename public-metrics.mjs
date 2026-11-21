@@ -119,7 +119,7 @@ async function counters(service,link) {
 }
 
 // Match by permalink: the shortcode in a public URL is not a Graph media ID.
-async function instagramOwnerViews(channel,token,viaFacebook){
+async function instagramOwnerViews(channel,token,viaFacebook,accountId){
   const pending=new Map();
   for(const p of channel.posts){
     try{
@@ -136,7 +136,7 @@ async function instagramOwnerViews(channel,token,viaFacebook){
     if(!res.ok){
       const body=await res.json().catch(()=>({}));
       throw Object.assign(Error('Instagram Insights unavailable'),{reason:{
-        step:path==='me/accounts'?'pages':path.endsWith('/media')?'media':'insights',
+        step:path==='me/accounts'?'pages':path.endsWith('/media')?'media':path.endsWith('/insights')?'insights':'account',
         status:res.status,code:Number(body.error?.code)||null,subcode:Number(body.error?.error_subcode)||null
       }});
     }
@@ -151,7 +151,13 @@ async function instagramOwnerViews(channel,token,viaFacebook){
       const account=list.data?.map(p=>p.instagram_business_account).find(a=>a?.username?.toLowerCase()===handle);
       if(account&&/^\d+$/.test(account.id)){owner=account.id;break;}
       const next=list.paging?.cursors?.after;
-      if(!list.paging?.next||!next||cursor===next){channel.ownerCheck={step:'account-not-found'};return;}
+      if(!list.paging?.next||!next||cursor===next){
+        if(/^\d+$/.test(accountId||'')){
+          const linked=await json(accountId,{fields:'id,username'});
+          if(linked.id===accountId&&linked.username?.toLowerCase()===handle){owner=accountId;break;}
+        }
+        channel.ownerCheck={step:'account-not-found'};return;
+      }
       cursor=next;
     }while(cursor);
   }
@@ -179,7 +185,7 @@ async function instagramOwnerViews(channel,token,viaFacebook){
   if(pending.size&&!channel.ownerCheck)channel.ownerCheck={step:'reel-not-found'};
 }
 
-export async function enrichPublicMetrics(snapshot, previous, instagramToken, facebookToken) {
+export async function enrichPublicMetrics(snapshot, previous, instagramToken, facebookToken, accountId) {
   const ownerToken=facebookToken||instagramToken;
   const old=new Map((previous?.channels||[]).flatMap(c=>c.posts.map(p=>[p.id,p])));
   await Promise.all(snapshot.channels.map(async channel=>{
@@ -212,7 +218,7 @@ export async function enrichPublicMetrics(snapshot, previous, instagramToken, fa
     }
     if(channel.service==='instagram'&&ownerToken){
       delete channel.ownerCheck;
-      try{await instagramOwnerViews(channel,ownerToken,Boolean(facebookToken));}
+      try{await instagramOwnerViews(channel,ownerToken,Boolean(facebookToken),accountId);}
       catch(error){channel.ownerCheck=error.reason||{step:'request-unavailable'};}
     }
   }));
