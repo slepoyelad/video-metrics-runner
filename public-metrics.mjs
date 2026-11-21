@@ -48,6 +48,19 @@ function instagram(html,id) {
   const counts=description.match(/^([\d,]+) likes?,\s*([\d,]+) comments?\s*-/i);
   return counts ? {reactions:counts[1],comments:counts[2]} : {};
 }
+function youtubeShort(html,id){
+  const player=embeddedJson(html,'var ytInitialPlayerResponse = ');
+  const canonical=html.match(/<link rel="canonical" href="https:\/\/www\.youtube\.com\/shorts\/([\w-]+)"/);
+  if(canonical?.[1]!==id||player?.videoDetails?.videoId!==id)return {};
+  const bar=embeddedJson(html,'var ytInitialData = ')?.overlay?.reelPlayerOverlayRenderer?.playerOverlay?.reelPlayerOverlayViewModel?.actionBar?.reelActionBarViewModel;
+  const buttons=bar?.buttonViewModels||[];
+  const comment=buttons.find(b=>b.buttonViewModel?.iconName==='SHORTS_COMMENT')?.buttonViewModel;
+  const likes=buttons.find(b=>b.likeButtonViewModel)?.likeButtonViewModel;
+  const label=likes?findField(likes,'accessibilityText'):'';
+  return {views:player.videoDetails.viewCount??player.microformat?.playerMicroformatRenderer?.viewCount,
+    comments:comment?.accessibilityText?.match(/^View ([\d,]+) comments?$/i)?.[1]??comment?.title,
+    reactions:label?.match(/like this video along with ([\d,]+) other (?:people|person)/i)?.[1]};
+}
 
 function instagramEmbed(html,id){
   // Instagram's embed serializes its media object inside a JSON string.
@@ -97,6 +110,10 @@ async function counters(service,link) {
   if(service==='instagram'){
     const [page,embed]=await Promise.all([read(target,parse),read(target+'embed/captioned/',instagramEmbed)]);
     return {...page,...Object.fromEntries(Object.entries(embed).filter(([,v])=>v!=null))};
+  }
+  if(service==='youtube'&&url.pathname.startsWith('/shorts/')){
+    const [watch,short]=await Promise.all([read(target,parse),read('https://www.youtube.com/shorts/'+id,youtubeShort)]);
+    return {...watch,...Object.fromEntries(Object.entries(short).filter(([,v])=>exactCount(v)!==null))};
   }
   return read(target,parse);
 }
