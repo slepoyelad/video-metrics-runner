@@ -29,7 +29,7 @@ if(process.env.BUFFER_READ_KEY){
     snapshot=fresh;
   }catch{/* Preserve the known post catalog on a provider failure. */}
 }
-await enrichPublicMetrics(snapshot,previous);
+await enrichPublicMetrics(snapshot,previous,process.env.INSTAGRAM_INSIGHTS_TOKEN);
 const youtube=snapshot.channels.find(c=>c.service==='youtube');
 if(process.env.YOUTUBE_API_KEY&&youtube){
   const ids=new Map();
@@ -74,7 +74,8 @@ for(const c of snapshot.channels){
       const m=p.metrics?.find(v=>v.type===k);
       if(!Number.isFinite(m?.value))return '—';
       const at=m.observedAt||p.metricsUpdatedAt;
-      return m.value+' · '+fmt(at);
+      const origin=c.service==='instagram'&&k==='views'?(m.source==='public'?' · נגן מוטמע':m.source==='instagram-insights'?' · Instagram Insights':' · Buffer'):'';
+      return m.value+origin+' · '+fmt(at);
     });
     rows.push('| '+[labels[c.service],link,...entries].join(' | ')+' |');
   }

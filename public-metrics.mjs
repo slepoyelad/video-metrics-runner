@@ -118,7 +118,47 @@ async function counters(service,link) {
   return read(target,parse);
 }
 
-export async function enrichPublicMetrics(snapshot, previous) {
+// Match by permalink: the shortcode in a public URL is not a Graph media ID.
+async function instagramOwnerViews(posts,token){
+  const pending=new Map();
+  for(const p of posts){
+    try{
+      const u=new URL(p.externalLink);
+      const code=u.pathname.match(/^\/(?:reel|p)\/([\w-]+)\/?$/)?.[1];
+      if(code&&['instagram.com','www.instagram.com'].includes(u.hostname))pending.set(code,p);
+    }catch{}
+  }
+  const json=async(path,params)=>{
+    const url=new URL('https://graph.instagram.com/v24.0/'+path);
+    url.search=new URLSearchParams(params);
+    const res=await fetch(url,{headers:{Authorization:'Bearer '+token},redirect:'error',signal:AbortSignal.timeout(6000)});
+    if(!res.ok)throw Error('Instagram Insights unavailable');
+    return res.json();
+  };
+  let after='';
+  for(let page=0;page<5&&pending.size;page++){
+    const list=await json('me/media',{fields:'id,permalink',limit:'100',...(after?{after}:{})});
+    for(const media of list.data||[]){
+      const code=media.permalink?.match(/\/(?:reel|p)\/([\w-]+)\/?$/)?.[1];
+      const post=pending.get(code);
+      if(!post||!/^\d+$/.test(media.id))continue;
+      pending.delete(code);
+      try{
+        const result=await json(media.id+'/insights',{metric:'views'});
+        const metric=result.data?.find(m=>m.name==='views');
+        const value=exactCount(metric?.values?.[0]?.value??metric?.total_value?.value);
+        if(value===null)continue;
+        post.metrics=post.metrics.filter(m=>m.type!=='views');
+        post.metrics.push({type:'views',name:'views',unit:'count',value,source:'instagram-insights',observedAt:new Date().toISOString()});
+      }catch{}
+    }
+    const cursor=list.paging?.cursors?.after;
+    if(!list.paging?.next||!cursor||cursor===after)break;
+    after=cursor;
+  }
+}
+
+export async function enrichPublicMetrics(snapshot, previous, instagramToken) {
   const old=new Map((previous?.channels||[]).flatMap(c=>c.posts.map(p=>[p.id,p])));
   await Promise.all(snapshot.channels.map(async channel=>{
     for(const [index,p] of channel.posts.entries()){
@@ -143,6 +183,13 @@ export async function enrichPublicMetrics(snapshot, previous) {
         }
       }
       p.metrics=[...metrics.values()];
+      if(channel.service==='instagram'&&instagramToken){
+        const saved=old.get(p.id)?.metrics?.find(m=>m.type==='views'&&m.source==='instagram-insights');
+        if(saved)p.metrics=[...p.metrics.filter(m=>m.type!=='views'),saved];
+      }
+    }
+    if(channel.service==='instagram'&&instagramToken){
+      try{await instagramOwnerViews(channel.posts,instagramToken);}catch{/* Retain the last measurement and its timestamp. */}
     }
   }));
   snapshot.fetchedAt=new Date().toISOString();

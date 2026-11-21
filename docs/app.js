@@ -23,10 +23,11 @@ async function loadReport(){
   for(const c of r.channels){
     const card=node('article');card.className=c.service;card.append(node('h3',names[c.service]),node('small','@'+c.label));const nums=node('div');nums.className='numbers';
     for(const [k,label] of Object.entries(metrics)){
-      const values=c.posts.map(p=>{const m=(p.metrics||[]).find(x=>x.type===k&&Number.isFinite(x.value));return m&&{n:m.value,at:m.observedAt||p.metricsUpdatedAt};}).filter(Boolean);
+      const values=c.posts.map(p=>{const m=(p.metrics||[]).find(x=>x.type===k&&Number.isFinite(x.value));return m&&{n:m.value,source:m.source,at:m.observedAt||p.metricsUpdatedAt};}).filter(Boolean);
       const d=node('div');d.append(node('span',label),node('strong',values.length?values.reduce((a,b)=>a+b.n,0).toLocaleString('he-IL'):'—'));
       const oldest=values.map(v=>v.at).filter(Boolean).sort()[0];
       if(values.length)d.append(node('small',time(oldest)));
+      if(c.service==='instagram'&&k==='views'&&values.length)d.append(node('small',[...new Set(values.map(v=>v.source==='public'?'נגן מוטמע':v.source==='instagram-insights'?'Instagram Insights':'Buffer'))].join(' / ')));
       if(oldest&&r.runStarted&&oldest<r.runStarted)d.append(node('small','מדידה קודמת'));
       if(values.length&&values.length<c.posts.length)d.append(node('small',values.length+' מתוך '+c.posts.length));
       nums.append(d);
