@@ -29,7 +29,7 @@ if(process.env.BUFFER_READ_KEY){
     snapshot=fresh;
   }catch{/* Preserve the known post catalog on a provider failure. */}
 }
-await enrichPublicMetrics(snapshot,previous,process.env.INSTAGRAM_INSIGHTS_TOKEN);
+await enrichPublicMetrics(snapshot,previous,process.env.INSTAGRAM_INSIGHTS_TOKEN,process.env.FACEBOOK_INSIGHTS_TOKEN);
 const youtube=snapshot.channels.find(c=>c.service==='youtube');
 if(process.env.YOUTUBE_API_KEY&&youtube){
   const ids=new Map();

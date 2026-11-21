@@ -31,6 +31,7 @@ jobs:
         env:
           BUFFER_READ_KEY: ${{ secrets.BUFFER_READ_KEY }}
           INSTAGRAM_INSIGHTS_TOKEN: ${{ secrets.INSTAGRAM_INSIGHTS_TOKEN }}
+          FACEBOOK_INSIGHTS_TOKEN: ${{ secrets.FACEBOOK_INSIGHTS_TOKEN }}
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           REQUEST_ID: ${{ inputs.request_id }}
           WORKFLOW_URL: ${{ github.server_url }}/${{ github.repository }}/actions/workflows/refresh.yml

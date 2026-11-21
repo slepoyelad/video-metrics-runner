@@ -119,9 +119,9 @@ async function counters(service,link) {
 }
 
 // Match by permalink: the shortcode in a public URL is not a Graph media ID.
-async function instagramOwnerViews(posts,token){
+async function instagramOwnerViews(channel,token,viaFacebook){
   const pending=new Map();
-  for(const p of posts){
+  for(const p of channel.posts){
     try{
       const u=new URL(p.externalLink);
       const code=u.pathname.match(/^\/(?:reel|p)\/([\w-]+)\/?$/)?.[1];
@@ -129,15 +129,29 @@ async function instagramOwnerViews(posts,token){
     }catch{}
   }
   const json=async(path,params)=>{
-    const url=new URL('https://graph.instagram.com/v24.0/'+path);
+    const origin=viaFacebook?'https://graph.facebook.com':'https://graph.instagram.com';
+    const url=new URL('/v24.0/'+path,origin);
     url.search=new URLSearchParams(params);
     const res=await fetch(url,{headers:{Authorization:'Bearer '+token},redirect:'error',signal:AbortSignal.timeout(6000)});
     if(!res.ok)throw Error('Instagram Insights unavailable');
     return res.json();
   };
+  let owner='me';
+  if(viaFacebook){
+    const handle=channel.label.replace(/^@/,'').toLowerCase();
+    let cursor='';
+    do{
+      const list=await json('me/accounts',{fields:'instagram_business_account{id,username}',limit:'100',...(cursor?{after:cursor}:{})});
+      const account=list.data?.map(p=>p.instagram_business_account).find(a=>a?.username?.toLowerCase()===handle);
+      if(account&&/^\d+$/.test(account.id)){owner=account.id;break;}
+      const next=list.paging?.cursors?.after;
+      if(!list.paging?.next||!next||cursor===next)return;
+      cursor=next;
+    }while(cursor);
+  }
   let after='';
   for(let page=0;page<5&&pending.size;page++){
-    const list=await json('me/media',{fields:'id,permalink',limit:'100',...(after?{after}:{})});
+    const list=await json(owner+'/media',{fields:'id,permalink',limit:'100',...(after?{after}:{})});
     for(const media of list.data||[]){
       const code=media.permalink?.match(/\/(?:reel|p)\/([\w-]+)\/?$/)?.[1];
       const post=pending.get(code);
@@ -158,7 +172,8 @@ async function instagramOwnerViews(posts,token){
   }
 }
 
-export async function enrichPublicMetrics(snapshot, previous, instagramToken) {
+export async function enrichPublicMetrics(snapshot, previous, instagramToken, facebookToken) {
+  const ownerToken=facebookToken||instagramToken;
   const old=new Map((previous?.channels||[]).flatMap(c=>c.posts.map(p=>[p.id,p])));
   await Promise.all(snapshot.channels.map(async channel=>{
     for(const [index,p] of channel.posts.entries()){
@@ -183,13 +198,13 @@ export async function enrichPublicMetrics(snapshot, previous, instagramToken) {
         }
       }
       p.metrics=[...metrics.values()];
-      if(channel.service==='instagram'&&instagramToken){
+      if(channel.service==='instagram'&&ownerToken){
         const saved=old.get(p.id)?.metrics?.find(m=>m.type==='views'&&m.source==='instagram-insights');
         if(saved)p.metrics=[...p.metrics.filter(m=>m.type!=='views'),saved];
       }
     }
-    if(channel.service==='instagram'&&instagramToken){
-      try{await instagramOwnerViews(channel.posts,instagramToken);}catch{/* Retain the last measurement and its timestamp. */}
+    if(channel.service==='instagram'&&ownerToken){
+      try{await instagramOwnerViews(channel,ownerToken,Boolean(facebookToken));}catch{/* Retain the last measurement and its timestamp. */}
     }
   }));
   snapshot.fetchedAt=new Date().toISOString();
