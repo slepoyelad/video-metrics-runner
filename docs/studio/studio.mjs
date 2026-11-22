@@ -9,7 +9,7 @@ const requested = new URLSearchParams(location.hash.slice(1)).get('repo');
 let repo = requested || savedRepo || '';
 const validRepo = name => /^[\w-][\w.-]*$/.test(name);
 let token = repo === savedRepo ? sessionStorage.getItem(prefix+'token') || localStorage.getItem(prefix+'token') : '';
-let library, decisions, pending, busy=false, currentPlayer;
+let library, decisions, pending, busy=false, currentPlayer, closeEmbed;
 const wait = ms => new Promise(resolve=>setTimeout(resolve,ms));
 const status = message => {$('status').textContent=message;};
 function element(tag,text,cls){
@@ -35,6 +35,7 @@ const read=async path=>(await api('contents/'+path,{raw:true})).json();
 const dispatch=(workflow,inputs)=>api('actions/workflows/'+workflow+'/dispatches',{method:'POST',payload:{ref:'main',inputs}});
 const ledger=()=>read('mobile/decisions.json');
 function stopPlayer(){
+  if(closeEmbed){closeEmbed();closeEmbed=null;}
   if(!currentPlayer)return;
   const {el,url,abort,box,btn}=currentPlayer;
   abort.abort(); el.pause(); el.removeAttribute('src'); el.load(); box.remove();
@@ -106,6 +107,7 @@ function render(){
   const songs=[],review=[],ready=[],work=[];
   for(const item of library.songs){
     const row=card(item);
+    row.prepend(element('em',item.format==='צ׳יל'?'ראפ צ׳יל · הנחיית 98 BPM':'ראפ מרכזי'));
     if(decisions['song/'+item.id]){row.append(element('small','גרסה אושרה · ממתין להכנה'));work.push(row);continue;}
     for(const v of item.versions){
       const group=element('div',null,'version');
@@ -116,7 +118,7 @@ function render(){
           const frame=element('iframe');frame.title=item.title+' · '+v.label;
           frame.allow='autoplay';frame.src='https://suno.com/embed/'+v.id;
           const link=element('a','פתיחה בחשבון Suno ↗');link.href=v.suno;link.target='_blank';link.rel='noopener noreferrer';
-          listen.replaceWith(frame,link);
+          listen.replaceWith(frame,link);closeEmbed=()=>{frame.replaceWith(listen);link.remove();};
         });
         group.append(listen,button('בחירת '+v.label,()=>ask('select',item,v)));
       }else group.append(element('small',v.label+' · הקובץ ממתין לסנכרון'));
@@ -136,7 +138,13 @@ function render(){
       if(item.due)row.append(element('small','מועד מוצע · '+stamp(item.due)+' (ישראל)'));ready.push(row);
     }else{row.append(element('small',state==='correction'?'בתיקון · '+(answer?.note||item.note||''):'בהכנה'));work.push(row);}
   }
-  for(const p of library.preparation||[]){if(!library.films.some(f=>f.id===p.id))work.push(card(p));}
+  for(const p of library.preparation||[]){
+    if(library.films.some(f=>f.id===p.id))continue;
+    const row=card(p);
+    if(p.message)row.append(element('small',p.message));
+    if(p.audio)row.append(mediaButton(p.audio,'♫ האזנה לגרסה שאושרה'));
+    work.push(row);
+  }
   host.replaceChildren(shelf('אישור Suno',songs,'אין כרגע גרסאות שממתינות לבחירה.',previous[0]??!!songs.length),
     shelf('מחכים לאישור',review,'כל הסקיצות נבדקו.',previous[1]??!!review.length),
     shelf('בעבודה ובתיקון',work,'אין כרגע עבודות בהכנה.',previous[2]),
@@ -158,6 +166,7 @@ $('refresh').onclick=async()=>{
   }catch(e){status(e.message);}finally{$('refresh').disabled=false;}
 };
 $('repo').value=repo;$('repoLabel').hidden=!!repo&&validRepo(repo);
+$('repoHint').textContent=repo;
 $('login').querySelector('form').onsubmit=async event=>{
   event.preventDefault();repo=$('repo').value.trim();token=$('token').value.trim();
   try{await openDesk();localStorage.setItem(prefix+'repo',repo);
@@ -168,3 +177,15 @@ $('login').querySelector('form').onsubmit=async event=>{
 $('disconnect').onclick=()=>{stopPlayer();[sessionStorage,localStorage].forEach(s=>s.removeItem(prefix+'token'));location.reload();};
 if(token&&validRepo(repo)){openDesk().catch(e=>{status(e.message);$('login').hidden=false;});}
 else $('login').hidden=false;
+async function updateLibrary(){
+  if(document.hidden||$('desk').hidden||busy||currentPlayer||closeEmbed||$('confirmDialog').open)return;
+  try{
+    const [newLib,newDecisions]=await Promise.all([read('library.json?ref=mobile-library'),ledger()]);
+    if(currentPlayer||closeEmbed||busy||$('confirmDialog').open)return;
+    if(newLib.updatedAt!==library.updatedAt||JSON.stringify(newDecisions)!==JSON.stringify(decisions)){
+      library=newLib;decisions=newDecisions;render();
+    }
+  }catch{/* Keep the latest loaded view during transient connection loss. */}
+}
+document.addEventListener('visibilitychange',updateLibrary);
+setInterval(updateLibrary,60000);
