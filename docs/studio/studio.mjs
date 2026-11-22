@@ -1,4 +1,4 @@
-import {renderReport,stamp} from './report.mjs';
+import {renderReport,stamp} from './report.mjs?v=two-platforms-2';
 
 const $ = id => document.getElementById(id);
 const owner = location.hostname.split('.')[0];
@@ -30,7 +30,11 @@ async function api(path,{method='GET',payload,raw=false}={}){
   });
   if(!response.ok){
     const code=response.status;
-    if(code===401)throw Error('GitHub דחה את המפתח (401). הדבק שוב את הקוד המלא שהעתקת מ־GitHub ובדוק שהוא בתוקף.');
+    if(code===401){
+      for(const storage of [sessionStorage,localStorage])storage.removeItem(prefix+'token');
+      $('login').querySelector('details').open=true;
+      throw Error('GitHub דחה את המפתח (401). הדבק את הקוד המלא ממנהל הסיסמאות. אם הוא אבד או פג תוקפו, השתמש בקישור ליצירת מפתח חדש.');
+    }
     if(code===429 || (code===403 && (response.headers.get('x-ratelimit-remaining')==='0' || response.headers.has('retry-after'))))
       throw Error('GitHub הגביל זמנית את מספר הבקשות ('+code+'). נסה שוב מאוחר יותר עם אותו מפתח.');
     if(code===403 || code===404){
@@ -178,20 +182,25 @@ async function openDesk(){
   }).catch(()=>{});
   await metrics().catch(e=>{$('metrics').textContent=e.message;});
 }
-$('refresh').onclick=async()=>{
-  $('refresh').disabled=true;
+$('topRefresh').onclick=async()=>{
+  $('topRefresh').disabled=true;
   try{
     const id=crypto.randomUUID();await dispatch('refresh.yml',{request_id:id});status('בודק את המדדים בשלוש הפלטפורמות…');
     for(let i=0;i<45;i++){await wait(4000);if((await metrics()).requestId===id){status('המדדים עודכנו.');return;}}
     status('בדיקת המדדים עדיין בתור ב־GitHub.');
-  }catch(e){status(e.message);}finally{$('refresh').disabled=false;}
+  }catch(e){status(e.message);}finally{$('topRefresh').disabled=false;}
 };
 $('repo').value=repo;$('repoLabel').hidden=!!repo&&validRepo(repo);
 $('repoHint').textContent=repo;
 $('history').onclick=()=>{const box=$('publishedFold');if(box)box.open=true;};
-$('topRefresh').onclick=()=>$('refresh').click();
 $('login').querySelector('form').onsubmit=async event=>{
-  event.preventDefault();repo=$('repo').value.trim();token=$('token').value.trim();
+  event.preventDefault();repo=$('repo').value.trim();
+  const pasted=$('token').value.replace(/[\u061c\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g,'').trim().replace(/^Bearer\s+/i,'').replace(/\s+/g,'');
+  if(!/^(github_pat_|ghp_)[a-zA-Z0-9_]+$/.test(pasted)){
+    $('login').querySelector('details').open=true;
+    status('הדבק את קוד המפתח המלא שקיבלת מ־GitHub. מפתח Fine-grained מתחיל ב־github_pat_.');return;
+  }
+  token=pasted;
   try{await openDesk();localStorage.setItem(prefix+'repo',repo);
     [localStorage,sessionStorage].forEach(s=>s.removeItem(prefix+'token'));
     ($('remember').checked?localStorage:sessionStorage).setItem(prefix+'token',token);$('token').value='';

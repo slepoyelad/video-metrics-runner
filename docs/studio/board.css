@@ -352,3 +352,17 @@ header #updated{font-size:12px;color:var(--muted)}main{width:100%}.release em{di
 .pf-analysis{float:left;margin:0}.pf-analysis summary{cursor:pointer;list-style:none;border:1px solid #574781;border-radius:18px;background:var(--card);color:var(--accent);padding:7px 13px;font-size:13px}.pf-analysis[open]{float:none}.pf-analysis[open]>div,.pf .inside{padding:14px;border:1px solid var(--line);background:var(--card);border-radius:14px}.pf-analysis li{margin-top:8px}.pf-analysis small{display:block;color:var(--muted)}
 .pf>.fold{margin:12px 0;background:var(--card);border:1px solid var(--line);border-radius:12px}.pf>.fold>summary{padding:13px!important;cursor:pointer;font-weight:bold}.pf-chart svg{width:100%;direction:ltr}.pf-chart text{font:12px system-ui;fill:var(--muted)}.pf-chart h3{font-size:14px;margin:12px 0 4px}.pf-grid{fill:none;stroke:var(--line)}.pf-line{fill:none;stroke-width:2.5}.pf-line.instagram{stroke:#388cf1}.pf-line.tiktok{stroke:#9983ef}.pf-point.instagram{fill:#388cf1}.pf-point.tiktok{fill:#9983ef}.pf-chart .range{display:flex;direction:ltr;justify-content:space-between}.pf-legend{font-size:12px}
 @media(max-width:500px){.pf .table-wrap{padding:8px}.pf th,.pf td{padding:8px 3px;font-size:12px}.pf thead th{font-size:11px}}
+.pf .kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.pf .kpi{min-height:auto;padding:12px 14px;border-radius:16px}
+.pf .kpi strong{display:block;line-height:1.1;font-weight:700;font-variant-numeric:tabular-nums}
+.pf .kpi>span{display:block;font-size:13px}
+.pf .table-wrap{margin-top:12px;padding:14px;border-radius:18px}
+.pf .table-wrap td,.pf .table-wrap th{padding:9px 4px;font-variant-numeric:tabular-nums}
+.pf .table-wrap tbody th{font-size:14px;color:var(--text);font-weight:500}
+.pf .table-wrap tbody td{font-weight:500}
+.pf>details.fold>summary{display:flex;align-items:center;justify-content:space-between;list-style:none;padding:12px 14px!important;font-size:14px;min-height:48px}
+.pf>details.fold>summary::after{content:'▾';font-size:12px;color:var(--muted)}
+.pf>details.fold[open]>summary::after{transform:rotate(180deg)}
+.pf summary::-webkit-details-marker{display:none}
+.pf .pf-analysis summary{min-height:36px;display:flex;align-items:center;padding:7px 14px}
+@media(max-width:559px){.pf .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.pf .table-wrap{padding:10px}.pf .table-wrap td,.pf .table-wrap th{padding:7px 3px}}
