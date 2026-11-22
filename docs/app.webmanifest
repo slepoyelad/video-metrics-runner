@@ -1,1 +1,1 @@
-{"name":"ביצועי הסרטונים","short_name":"ביצועים","lang":"he","dir":"rtl","scope":"./","start_url":"./","display":"standalone","background_color":"#132123","theme_color":"#132123","icons":[{"src":"icon.svg","sizes":"any","type":"image/svg+xml"}]}
+{"name": "Language Raps · לוח בקרה", "short_name": "Language Raps", "lang": "he", "dir": "rtl", "scope": "./", "start_url": "./studio/#repo=language-raps-metrics", "display": "standalone", "background_color": "#100d22", "theme_color": "#100d22", "icons": [{"src": "icon.svg", "sizes": "any", "type": "image/svg+xml"}]}

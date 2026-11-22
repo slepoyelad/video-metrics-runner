@@ -2,7 +2,7 @@ const $=id=>document.getElementById(id);
 const owner=location.hostname.split('.')[0], runner=location.pathname.split('/')[1];
 const key='metrics/'+runner+'/', api='https://api.github.com/repos/'+owner+'/';
 const requested=new URLSearchParams(location.hash.slice(1)).get('repo');
-if((requested||localStorage.getItem(key+'repo'))==='language-raps-metrics')location.replace('./studio/'+location.hash);
+if(!requested||(requested==='language-raps-metrics'))location.replace('./studio/'+(location.hash||'#repo=language-raps-metrics'));
 if(requested&&/^[\w.-]+$/.test(requested))localStorage.setItem(key+'repo',requested);
 let repo=localStorage.getItem(key+'repo')||'',token=sessionStorage.getItem(key+'token')||localStorage.getItem(key+'token')||'';
 const names={youtube:'YouTube',instagram:'Instagram',tiktok:'TikTok'},metrics={views:'צפיות',reactions:'לייקים',comments:'תגובות'};

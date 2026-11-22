@@ -103,7 +103,8 @@ function shelf(title,items,empty,opened=false){
   const body=element('div',null,'release-list');body.append(...(items.length?items:[element('p',empty,'caption')]));d.append(body);return d;
 }
 function render(){
-  stopPlayer();const host=$('shelves'), previous=[...host.children].map(el=>el.open);
+  stopPlayer();const host=$('shelves');
+  const expanded=id=>host.querySelector('#'+id)?.open??false;
   const songs=[],review=[],ready=[],work=[];
   for(const item of library.songs){
     const row=card(item);
@@ -145,16 +146,26 @@ function render(){
     if(p.audio)row.append(mediaButton(p.audio,'♫ האזנה לגרסה שאושרה'));
     work.push(row);
   }
-  host.replaceChildren(shelf('אישור Suno',songs,'אין כרגע גרסאות שממתינות לבחירה.',previous[0]??!!songs.length),
-    shelf('מחכים לאישור',review,'כל הסקיצות נבדקו.',previous[1]??!!review.length),
-    shelf('בעבודה ובתיקון',work,'אין כרגע עבודות בהכנה.',previous[2]),
-    shelf('מוכנים לפרסום',ready,'התור ריק.',previous[3]??(!songs.length&&!review.length)));
-  $('updated').textContent='סנכרון ספרייה · '+stamp(library.updatedAt);
+  const music=shelf('אישור Suno',songs,'אין כרגע גרסאות שממתינות לבחירה.',expanded('songsFold'));music.id='songsFold';
+  const reviewSection=element('section'), heading=element('h2','מחכים לאישור ','stage');
+  heading.append(element('span',String(review.length),'count'));reviewSection.append(heading);
+  const panel=element('div',null,'card'), fold=element('details');fold.id='reviewFold';fold.open=expanded('reviewFold');
+  if(review.length)panel.append(review[0]);
+  fold.append(element('summary','כל הסרטונים שמחכים לאישור'),...(review.length>1?review.slice(1):[element('p',review.length?'הסקיצה מופיעה למעלה.':'כל הסקיצות נבדקו.','caption')]));
+  panel.append(fold);reviewSection.append(panel);
+  const queue=shelf('מוכנים לפרסום',ready,'התור ריק.',expanded('qbox'));queue.id='qbox';
+  queue.querySelector('h2').append(element('small','צ׳יל 17:00 · ראפ מרכזי 23:00','slot'));
+  const progress=shelf('בעבודה ובתיקון',work,'',expanded('workBox'));progress.id='workBox';progress.hidden=!work.length;
+  host.replaceChildren(music,reviewSection,queue,progress);
 }
-async function metrics(){const r=await read('report.json');$('metrics').innerHTML=renderReport(r);return r;}
+async function metrics(){const r=await read('report.json');$('metrics').innerHTML=renderReport(r);$('updated').textContent='מדידה אחרונה · '+stamp(r.fetchedAt);return r;}
 async function openDesk(){
   [library,decisions]=await Promise.all([read('library.json?ref=mobile-library'),ledger()]);
   render();$('desk').hidden=false;$('login').hidden=true;status('');
+  $('history').hidden=false;$('topRefresh').hidden=false;
+  api('contents/avatar.png?ref=mobile-library',{raw:true}).then(r=>r.blob()).then(b=>{
+    $('avatar').src=URL.createObjectURL(b.slice(0,b.size,'image/png'));$('avatar').hidden=false;
+  }).catch(()=>{});
   await metrics().catch(e=>{$('metrics').textContent=e.message;});
 }
 $('refresh').onclick=async()=>{
@@ -167,6 +178,8 @@ $('refresh').onclick=async()=>{
 };
 $('repo').value=repo;$('repoLabel').hidden=!!repo&&validRepo(repo);
 $('repoHint').textContent=repo;
+$('history').onclick=()=>{const box=$('publishedFold');if(box)box.open=true;};
+$('topRefresh').onclick=()=>$('refresh').click();
 $('login').querySelector('form').onsubmit=async event=>{
   event.preventDefault();repo=$('repo').value.trim();token=$('token').value.trim();
   try{await openDesk();localStorage.setItem(prefix+'repo',repo);
