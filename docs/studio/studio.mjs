@@ -82,21 +82,24 @@ function mediaButton(path,title){
 }
 function ask(action,item,version){
   if(busy)return;
-  const rerun=action==='rerun', needsNote=rerun||action==='correct';
-  pending={action,song:item.id,version:version?.id||'',revision:rerun?item.runRevision:String(item.revision??''),note:''};
-  $('question').textContent={select:'לאשר את גרסת השיר?',approve:'להעביר למוכנים לפרסום?',correct:'לשלוח בקשת תיקון?',rerun:'להפיק שתי גרסאות חדשות ב־Suno?'}[action];
-  $('detail').textContent=[item.title,version?.label,rerun?'עלות לזוג · '+item.rerunCost+' קרדיטים':null].filter(Boolean).join(' · ');
+  const rerun=action==='rerun', replace=action==='replace', needsNote=rerun||action==='correct';
+  const clips=replace?[...new Set(item.versions.map(v=>v.id))].sort():[];
+  pending={action,song:item.id,version:replace?clips.join(','):version?.id||'',revision:rerun||replace?item.runRevision:String(item.revision??''),note:''};
+  $('question').textContent={select:'לאשר את גרסת השיר?',approve:'להעביר למוכנים לפרסום?',correct:'לשלוח בקשת תיקון?',rerun:'להפיק שתי גרסאות חדשות ב־Suno?',replace:'למחוק את הרעיון ולהכין רעיון חדש?'}[action];
+  $('detail').textContent=[item.title,version?.label,replace?clips.length+' גרסאות יועברו לפח ב־Suno. המקום יתפנה לרעיון אחר.':null,rerun||replace?'עלות לזוג חדש · '+item.rerunCost+' קרדיטים במסגרת המכסה':null].filter(Boolean).join(' · ');
+  $('confirm').textContent=replace?'אישור מחיקה והחלפה':'אישור';
   $('feedback').hidden=!needsNote; $('note').required=needsNote;$('note').maxLength=rerun?350:800;$('note').value='';
   $('noteLabel').textContent=rerun?'מה לשנות בביצוע?':'מה לתקן בסקיצה?';
   $('musicHint').hidden=!rerun;
   $('confirmDialog').showModal();
+  if(replace)$('cancel').focus();
 }
 $('cancel').onclick=()=>$('confirmDialog').close();
 $('decision').onsubmit=async event=>{
   event.preventDefault(); if(busy||!pending)return;
   const input={...pending,note:$('note').value.trim()};
   if(['correct','rerun'].includes(input.action)&&!input.note){$('note').focus();return;}
-  const key=input.action==='rerun'?'rerun/'+input.song+'/'+input.revision:
+  const key=['replace','rerun'].includes(input.action)?input.action+'/'+input.song+'/'+input.revision:
     input.action==='select'?'song/'+input.song:'film/'+input.song+'/'+input.revision;
   busy=true;$('confirmDialog').close();status('שומר את ההחלטה ב־GitHub…');
   try{
@@ -107,7 +110,7 @@ $('decision').onsubmit=async event=>{
       if(!saved)continue;
       render();
       const matches=saved.action===input.action && (input.action!=='select'||saved.version===input.version) && (!['correct','rerun'].includes(input.action)||saved.note===input.note);
-      status(matches?(input.action==='rerun'?'הדגשים נשמרו. ההפקה תתחיל כשהמחשב מחובר ל־Suno.':'ההחלטה נשמרה במאגר הפרטי.'):'כבר נשמרה בקשה אחרת לפריט הזה.');return;
+      status(matches?(input.action==='replace'?'ההחלפה נשמרה ותטופל כשהמחשב מחובר ל־Suno.':input.action==='rerun'?'הדגשים נשמרו. ההפקה תתחיל כשהמחשב מחובר ל־Suno.':'ההחלטה נשמרה במאגר הפרטי.'):'כבר נשמרה בקשה אחרת לפריט הזה.');return;
     }
     status('הבקשה נשלחה. טרם התקבל אישור שמירה מ־GitHub. אפשר לפתוח שוב את הלוח כדי לבדוק.');
   }catch(e){status(e.message);}finally{busy=false;}
@@ -129,6 +132,10 @@ function render(){
     const row=card(item);
     row.prepend(element('em',item.format==='צ׳יל'?'ראפ צ׳יל · הנחיית 98 BPM':'ראפ מרכזי'));
     if(decisions['song/'+item.id]){row.append(element('small','גרסה אושרה · ממתין להכנה'));work.push(row);continue;}
+    const replacement=decisions['replace/'+item.id+'/'+item.runRevision];
+    if(replacement?.clips.join(',')===[...new Set(item.versions.map(v=>v.id))].sort().join(',')){
+      row.append(element('small','החלפת הרעיון ממתינה לסנכרון'));work.push(row);continue;
+    }
     const request=decisions['rerun/'+item.id+'/'+item.runRevision];
     const waiting=Boolean(item.rerunPending || (request&&!item.rerunMessage));
     function selectButton(v){
@@ -172,7 +179,9 @@ function render(){
         if(item.lyricIssue||queued||d.state==='ready'||d.state==='writing')row.append(element('small',item.lyricIssue||(queued?'הבקשה ממתינה לסנכרון':d.state==='writing'?'Codex מכין טיוטה':'טיוטת מילים מחכה לקריאה')));
       }
     }
-    songs.push(row);
+    const replace=button('מחיקת רעיון ויצירת רעיון חדש',()=>ask('replace',item));
+    replace.disabled=waiting||!item.versions.length||item.versions.some(v=>v.suno!=='https://suno.com/song/'+v.id);
+    row.append(replace);songs.push(row);
   }
   for(const item of library.films){
     const row=card(item), answer=decisions['film/'+item.id+'/'+item.revision];
