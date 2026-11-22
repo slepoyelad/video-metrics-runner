@@ -1,4 +1,3 @@
-const labels={views:'צפיות',reactions:'לייקים',comments:'תגובות',videos:'סרטונים שפורסמו'};
 const services={instagram:'אינסטגרם',youtube:'יוטיוב',tiktok:'טיקטוק'};
 const hosts={instagram:['www.instagram.com','instagram.com'],youtube:['youtube.com','www.youtube.com','youtu.be'],tiktok:['tiktok.com','www.tiktok.com']};
 const number=new Intl.NumberFormat('he-IL');
@@ -8,59 +7,80 @@ function href(value,allowed){
   try{const u=new URL(value);if(u.protocol==='https:'&&!u.username&&!u.password&&allowed.includes(u.hostname))return esc(u.href);}catch{}
   return '';
 }
+const platformNames={instagram:'אינסטגרם',tiktok:'טיקטוק'};
+const platforms=Object.keys(platformNames);
+const metricNames={videos:'סרטונים',views:'צפיות',reactions:'לייקים',comments:'תגובות',followers:'עוקבים'};
 const formatted=value=>Number.isFinite(value)?number.format(value):'—';
-const totalsKeys=['views','reactions','comments'];
 function groupKey(p,service){return p.clipId||service+'/'+p.id;}
-function measure(c,key,resetAt){
-  if(resetAt&&!c.posts.length&&!c.deliveries?.length&&!c.measurementErrors?.length)return {value:0,count:0,sources:[]};
-  const samples=c.posts.flatMap(p=>{
-    const m=p.metrics?.find(m=>m.type===key&&Number.isFinite(m.value));
-    return m?[{value:m.value,at:m.observedAt||p.metricsUpdatedAt,source:m.source}]:[];
-  });
-  return {value:samples.length?samples.reduce((n,m)=>n+m.value,0):null,count:samples.length,
-    time:samples.map(m=>m.at).filter(Boolean).sort()[0],sources:[...new Set(samples.map(m=>m.source))]};
-}
-export function observation(report){
-  const channels=report.channels||[], posts=channels.flatMap(c=>c.posts.map(p=>groupKey(p,c.service)));
-  const item={at:report.fetchedAt,videos:new Set(posts).size,coverage:{}};
-  for(const key of totalsKeys){
-    const rows=channels.map(c=>measure(c,key,report.resetAt));
-    const count=rows.reduce((n,m)=>n+m.count,0);
-    const resetEmpty=!!report.resetAt&&channels.length>0&&posts.length===0;
-    item[key]=count||resetEmpty?rows.reduce((n,m)=>n+(m.value??0),0):null;
-    item.coverage[key]=count===posts.length&&(count>0||resetEmpty);
+function postMetric(p,key){return p.metrics?.find(m=>m.type===key && Number.isFinite(m.value))?.value;}
+export function observation(r){
+  const rows={}, clips=new Set();
+  for(const c of r.channels.filter(c=>platforms.includes(c.service))){
+    const posts=c.posts||[];
+    for(const p of posts)clips.add(groupKey(p,c.service));
+    const row={videos:posts.length,followers:c.followersUnavailable?null:c.followers};
+    for(const key of ['views','reactions','comments']){
+      const values=posts.map(p=>postMetric(p,key));
+      row[key]=!c.measurementErrors?.length&&values.every(Number.isFinite)?values.reduce((a,b)=>a+b,0):null;
+    }
+    rows[c.service]=row;
   }
-  return item;
+  return {at:r.fetchedAt,platforms:rows,videos:clips.size};
 }
-function badgeDelta(current,old,key){
-  if(!old||!Number.isFinite(old[key])||!Number.isFinite(current[key]))return '';
-  if(key!=='videos'&&(!current.coverage[key]||!old.coverage?.[key]))return '';
-  const delta=current[key]-old[key];
-  return '<small class="change '+(delta>0?'up':delta<0?'down':'same')+'">'+(delta===0?'ללא שינוי':'<bdi>'+(delta>0?'+':'')+formatted(delta)+'</bdi>')+'</small>';
+function total(point,key){
+  if(!point)return null;
+  if(key==='videos')return point.videos;
+  const values=platforms.map(s=>point.platforms[s]?.[key]);
+  return values.every(Number.isFinite)?values[0]+values[1]:null;
 }
-function metricCell(c,key,r){
-  const m=measure(c,key,r.resetAt);
-  const notes=[];
-  if(key==='views'&&c.service==='instagram'&&m.count){
-    notes.push(m.sources.map(s=>s==='instagram-insights'?'Instagram Insights':s==='public'?'נגן מוטמע':'Buffer').join(' / '));
+function kpi(key,current,previous){
+  const value=total(current,key),before=total(previous,key);
+  let change='';
+  if(Number.isFinite(value)&&Number.isFinite(before)){
+    const delta=value-before;
+    change=delta===0?'<small class="change same">ללא שינוי</small>':
+      '<div class="pf-change"><small class="change '+(delta>0?'up':'down')+'"><bdi>'+(delta>0?'▲ +':'▼ ')+formatted(delta)+'</bdi></small><small>היה '+formatted(before)+'</small></div>';
   }
-  if(m.count&&m.count<c.posts.length)notes.push(m.count+' מתוך '+c.posts.length);
-  if(m.time)notes.push(stamp(m.time));
-  if(m.count&&r.runStarted&&m.time<r.runStarted)notes.push('מדידה קודמת');
-  return '<td><strong>'+formatted(m.value)+'</strong>'+notes.map(n=>'<small>'+esc(n)+'</small>').join('')+'</td>';
+  return '<article class="kpi"><strong>'+formatted(value)+'</strong><span>'+(key==='videos'?'סרטונים שפורסמו':metricNames[key])+'</span>'+change+'</article>';
 }
-function trend(points){
-  if(points.length<2)return '';
-  const values=points.filter(p=>Number.isFinite(p.views)&&p.coverage?.views);
-  if(values.length<2)return '';
-  const lo=Math.min(...values.map(p=>p.views)),hi=Math.max(...values.map(p=>p.views));
-  const t0=Date.parse(values[0].at),span=Math.max(1,Date.parse(values.at(-1).at)-t0);
-  const coordinates=values.map(p=>[(4+592*(Date.parse(p.at)-t0)/span).toFixed(1),(hi===lo?44:81-74*(p.views-lo)/(hi-lo)).toFixed(1)].join(',')).join(' ');
-  return '<details class="fold"><summary>צפיות לאורך זמן</summary><div class="inside"><svg class="trend" viewBox="0 0 600 88" role="img" aria-label="מגמת הצפיות"><polyline points="'+coordinates+'" fill="none" stroke="currentColor" stroke-width="3" vector-effect="non-scaling-stroke"/></svg><div class="range"><span>'+stamp(values[0].at)+' · '+formatted(values[0].views)+'</span><span>'+stamp(values.at(-1).at)+' · '+formatted(values.at(-1).views)+'</span></div></div></details>';
+function chart(points,key){
+  const ts=p=>Date.parse(p.at),start=ts(points[0]),end=ts(points.at(-1));
+  const max=Math.max(1,...points.flatMap(p=>platforms.map(s=>p.platforms[s]?.[key]??0)));
+  const x=p=>14+450*(ts(p)-start)/Math.max(1,end-start);
+  let lines='';
+  for(const s of platforms){
+    let segment=[];
+    const flush=()=>{if(segment.length)lines+='<polyline class="pf-line '+s+'" points="'+segment.join(' ')+'"/>';segment=[];};
+    for(const p of points){
+      const v=p.platforms[s]?.[key];
+      if(!Number.isFinite(v)){flush();continue;}
+      const cx=x(p).toFixed(1),cy=(96-82*v/max).toFixed(1);
+      segment.push(cx+','+cy);
+      lines+='<circle class="pf-point '+s+'" cx="'+cx+'" cy="'+cy+'" r="2.8"><title>'+platformNames[s]+' · '+stamp(p.at)+' · '+formatted(v)+'</title></circle>';
+    }
+    flush();
+  }
+  return '<div class="pf-chart"><h3>'+metricNames[key]+' לאורך זמן</h3>'+(lines?
+    '<svg viewBox="0 0 535 110" role="img" aria-label="'+metricNames[key]+' לפי פלטפורמה"><path class="pf-grid" d="M14 14H464 M14 55H464 M14 96H464"/><text x="478" y="18">'+formatted(max)+'</text><text x="478" y="100">0</text>'+lines+'</svg><div class="range"><span>'+stamp(points[0].at)+'</span><span>'+stamp(points.at(-1).at)+'</span></div>':'<p class="caption">טרם התקבלה מדידה.</p>')+'</div>';
 }
-export function renderReport(r){
+function performance(r){
   const current=observation(r);
-  const points=[...(r.history||[]).filter(p=>Number.isFinite(Date.parse(p.at))&&p.at<current.at),current];
+  const points=[...(r.performanceHistory||r.history||[]).filter(p=>p.platforms&&Date.parse(p.at)<Date.parse(current.at)&&(!r.resetAt||Date.parse(p.at)>=Date.parse(r.resetAt))),current];
+  const previous=points.at(-2);
+  const columns=Object.keys(metricNames);
+  const rows=platforms.map(s=>'<tr><th scope="row"><i class="pf-dot '+s+'"></i>'+platformNames[s]+'</th>'+columns.map(k=>'<td>'+formatted(current.platforms[s]?.[k])+'</td>').join('')+'</tr>').join('');
+  const entries=r.channels.filter(c=>platforms.includes(c.service)).flatMap(c=>c.posts.map(p=>({p,s:c.service,views:postMetric(p,'views')}))).filter(e=>Number.isFinite(e.views)).sort((a,b)=>b.views-a.views);
+  const ranked=entries.map(({p,s,views})=>'<li><bdi>'+esc(p.clipTitle||p.text||'סרטון')+'</bdi><small>'+platformNames[s]+' · '+formatted(views)+' צפיות · '+formatted(postMetric(p,'reactions'))+' לייקים</small></li>').join('');
+  const missing=platforms.filter(s=>!Number.isFinite(current.platforms[s]?.followers));
+  const analysis='<details class="pf-analysis"><summary>✨ ניתוח סרטונים</summary><div><b>הסרטונים לפי מספר צפיות</b>'+(ranked?'<ol>'+ranked+'</ol>':'<p>טרם התקבלו צפיות לניתוח.</p>')+'</div></details>';
+  const cards=['views','reactions','followers','videos'].map(k=>kpi(k,current,previous)).join('');
+  const note=missing.length?'<p class="caption">טרם התקבל מספר עוקבים מ־'+missing.map(s=>platformNames[s]).join(' ומ־')+'.</p>':'';
+  const table='<div class="table-wrap"><table aria-label="ביצועים לפי פלטפורמה"><thead><tr><th>פלטפורמה</th>'+Object.values(metricNames).map(v=>'<th>'+v+'</th>').join('')+'</tr></thead><tbody>'+rows+'</tbody></table>'+note+'</div>';
+  const legend=platforms.map(s=>'<span><i class="pf-dot '+s+'"></i>'+platformNames[s]+'</span>').join('');
+  return '<section id="numbers" class="pf">'+analysis+'<h2>המספרים</h2><div class="kpis">'+cards+'</div><p class="caption">'+(previous?'השינוי לעומת העדכון הקודם · ':'')+'מדידה אחרונה '+stamp(current.at)+'</p>'+table+'<details class="fold"><summary>גרפים: צפיות ועוקבים לאורך זמן</summary><div class="inside"><div class="pf-legend">'+legend+'</div>'+chart(points,'views')+chart(points,'followers')+'</div></details></section>';
+}
+
+export function renderReport(r){
   const groups=new Map();
   for(const c of r.channels){
     for(const p of c.posts){
@@ -69,8 +89,6 @@ export function renderReport(r){
       groups.get(id).push({...p,service:c.service});
     }
   }
-  const kpis=Object.entries(labels).map(([k,l])=>'<article class="kpi"><strong>'+formatted(current[k])+'</strong><span>'+l+'</span>'+badgeDelta(current,points.at(-2),k)+(k!=='videos'&&current[k]!=null&&!current.coverage[k]?'<small>נתונים חלקיים</small>':'')+'</article>').join('');
-  const rows=r.channels.map(c=>'<tr><th scope="row"><i class="dot '+esc(c.service)+'"></i>'+esc(services[c.service]||c.service)+'<small dir="ltr">@'+esc(c.label)+'</small></th>'+totalsKeys.map(k=>metricCell(c,k,r)).join('')+'</tr>').join('');
   const production=Array.isArray(r.production)?r.production:[];
   const videos=[...groups.values()].sort((a,b)=>(b[0].sentAt||'').localeCompare(a[0].sentAt||'')).map(posts=>{
     const p=posts[0],track=production.find(t=>t.title===p.clipTitle);
@@ -85,5 +103,5 @@ export function renderReport(r){
     ).join('');
     return '<article class="release"><strong><bdi>'+esc(p.clipTitle||p.text||'סרטון')+'</bdi></strong><div class="caption">'+[track?.language,track?.format,stamp(p.sentAt)].filter(Boolean).map(esc).join(' · ')+'</div><div class="release-links">'+links+'</div></article>';
   }).join('');
-  return '<section id="numbers"><h2>המספרים</h2><div class="kpis">'+kpis+'</div>'+(points.length>1?'<p class="caption">שינוי מהבדיקה ב־'+stamp(points.at(-2).at)+'</p>':'')+'<div class="table-wrap"><table><caption>ביצועים לפי פלטפורמה</caption><thead><tr><th>פלטפורמה</th>'+totalsKeys.map(k=>'<th>'+labels[k]+'</th>').join('')+'</tr></thead><tbody>'+rows+'</tbody></table></div>'+trend(points)+'</section><section id="published"><details id="publishedFold" class="list-fold"><summary><h2>סרטונים שפורסמו <span class="count">'+groups.size+'</span></h2></summary><div class="release-list">'+(videos||'<p class="caption">עדיין אין סרטונים שפורסמו.</p>')+'</div></details></section>';
+  return performance(r)+'<section id="published"><details id="publishedFold" class="list-fold"><summary><h2>סרטונים שפורסמו <span class="count">'+groups.size+'</span></h2></summary><div class="release-list">'+(videos||'<p class="caption">עדיין אין סרטונים שפורסמו.</p>')+'</div></details></section>';
 }
