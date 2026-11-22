@@ -1,4 +1,5 @@
 import {renderReport,stamp} from './report.mjs?v=three-platforms-3';
+import {openLyrics} from './lyrics-ui.mjs';
 
 const $ = id => document.getElementById(id);
 const owner = location.hostname.split('.')[0];
@@ -149,11 +150,27 @@ function render(){
       row.append(group);
     }
     if(item.rerunnable){
-      const rerun=button('הרצה מחדש עם דגשים',()=>ask('rerun',item));
+      const rerun=button('שינוי ביצוע',()=>ask('rerun',item));
       rerun.disabled=Boolean(request)||item.rerunPending;row.append(rerun);
       if(item.rerunMessage)row.append(element('small',item.rerunMessage));
       else if(waiting)row.append(element('small',item.rerunPending?'Suno מטפל בהפקה.':'הבקשה נשמרה וממתינה להפקה.'));
       if(request)row.append(element('small',request.note));
+      if(item.lyricDraft){
+        const d=item.lyricDraft;
+        const suffix='/'+item.id+'/'+d.id+'/'+item.runRevision;
+        const queued=decisions['rewrite'+suffix]||decisions['produce'+suffix];
+        const rewrite=button('שכתוב מילים',()=>openLyrics({...item,rerunPending:waiting||!!queued},item.rerunCost,async(action,draft,note)=>{
+          await dispatch('mobile-review.yml',{action,song:item.id,revision:item.runRevision,version:draft,note});
+          status('הבקשה נשלחה לסנכרון עם חדר העריכה.');
+          for(let i=0;i<40;i++){
+            await wait(3000);decisions=await ledger();
+            if(decisions[action+suffix]){render();return;}
+          }
+          throw Error('הבקשה נשלחה. טרם התקבל אישור שמירה, יש לרענן לפני ניסיון נוסף.');
+        }));
+        row.append(rewrite);
+        if(item.lyricIssue||queued||d.state==='ready'||d.state==='writing')row.append(element('small',item.lyricIssue||(queued?'הבקשה ממתינה לסנכרון':d.state==='writing'?'Codex מכין טיוטה':'טיוטת מילים מחכה לקריאה')));
+      }
     }
     songs.push(row);
   }
