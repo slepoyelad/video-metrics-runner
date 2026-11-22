@@ -70,12 +70,29 @@ function chart(points,key){
   return '<div class="pf-chart"><h3>'+metricNames[key]+' לאורך זמן</h3>'+(lines?
     '<svg viewBox="0 0 535 110" role="img" aria-label="'+metricNames[key]+' לפי פלטפורמה"><path class="pf-grid" d="M14 14H464 M14 55H464 M14 96H464"/><text x="478" y="18">'+formatted(max)+'</text><text x="478" y="100">0</text>'+lines+'</svg><div class="range"><span>'+stamp(points[0].at)+'</span><span>'+stamp(points.at(-1).at)+'</span></div>':'<p class="caption">טרם התקבלה מדידה.</p>')+'</div>';
 }
+function platformViewChange(row,prior){
+  if(!Number.isFinite(row?.views)||!Number.isFinite(prior?.views)||
+    row.stale?.includes('views')||prior.stale?.includes('views'))return '';
+  const delta=row.views-prior.views;
+  const direction=delta>0?'up':delta<0?'down':'same';
+  const change=(delta>0?'+':delta<0?'−':'')+formatted(Math.abs(delta));
+  const label='שינוי בצפיות מאז המדידה הקודמת ('+formatted(prior.views)+')';
+  return ' <small dir="ltr" class="change pf-view-change '+direction+'" title="'+label+'">'+change+'</small>';
+}
 function performance(r){
   const current=observation(r);
   const points=[...(r.performanceHistory||r.history||[]).filter(p=>p.platforms&&Date.parse(p.at)<Date.parse(current.at)&&(!r.resetAt||Date.parse(p.at)>=Date.parse(r.resetAt))),current];
   const previous=points.at(-2);
   const columns=Object.keys(metricNames);
-  const rows=platforms.map(s=>'<tr><th scope="row"><i class="pf-dot '+s+'"></i>'+platformNames[s]+'</th>'+columns.map(k=>'<td>'+formatted(current.platforms[s]?.[k])+(current.platforms[s]?.stale.includes(k)?'<sup aria-label="מדידה קודמת">*</sup>':'')+'</td>').join('')+'</tr>').join('');
+  const rows=platforms.map(s=>{
+    const row=current.platforms[s];
+    const cells=columns.map(k=>{
+      const mark=row?.stale.includes(k)?'<sup aria-label="מדידה קודמת">*</sup>':'';
+      const change=k==='views'?platformViewChange(row,previous?.platforms[s]):'';
+      return '<td>'+formatted(row?.[k])+mark+change+'</td>';
+    });
+    return '<tr><th scope="row"><i class="pf-dot '+s+'"></i>'+platformNames[s]+'</th>'+cells.join('')+'</tr>';
+  }).join('');
   const entries=r.channels.filter(c=>platforms.includes(c.service)).flatMap(c=>c.posts.map(p=>({p,s:c.service,views:postMetric(p,'views')}))).filter(e=>Number.isFinite(e.views)).sort((a,b)=>b.views-a.views);
   const ranked=entries.map(({p,s,views})=>'<li><bdi>'+esc(p.clipTitle||p.text||'סרטון')+'</bdi><small>'+platformNames[s]+' · '+formatted(views)+' צפיות · '+formatted(postMetric(p,'reactions'))+' לייקים</small></li>').join('');
   const missing=platforms.filter(s=>!Number.isFinite(current.platforms[s]?.followers));
