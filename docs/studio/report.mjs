@@ -70,14 +70,14 @@ function chart(points,key){
   return '<div class="pf-chart"><h3>'+metricNames[key]+' לאורך זמן</h3>'+(lines?
     '<svg viewBox="0 0 535 110" role="img" aria-label="'+metricNames[key]+' לפי פלטפורמה"><path class="pf-grid" d="M14 14H464 M14 55H464 M14 96H464"/><text x="478" y="18">'+formatted(max)+'</text><text x="478" y="100">0</text>'+lines+'</svg><div class="range"><span>'+stamp(points[0].at)+'</span><span>'+stamp(points.at(-1).at)+'</span></div>':'<p class="caption">טרם התקבלה מדידה.</p>')+'</div>';
 }
-function platformViewChange(row,prior){
-  if(!Number.isFinite(row?.views)||!Number.isFinite(prior?.views)||
-    row.stale?.includes('views')||prior.stale?.includes('views'))return '';
-  const delta=row.views-prior.views;
+function platformMetricChange(key,row,prior){
+  if(key==='videos'||!Number.isFinite(row?.[key])||!Number.isFinite(prior?.[key])||
+    row.stale?.includes(key)||prior.stale?.includes(key))return '';
+  const delta=row[key]-prior[key];
   const direction=delta>0?'up':delta<0?'down':'same';
   const change=(delta>0?'+':delta<0?'−':'')+formatted(Math.abs(delta));
-  const label='שינוי בצפיות מאז המדידה הקודמת ('+formatted(prior.views)+')';
-  return ' <small dir="ltr" class="change pf-view-change '+direction+'" title="'+label+'">'+change+'</small>';
+  const label=metricNames[key]+' · במדידה הקודמת '+formatted(prior[key]);
+  return ' <small dir="ltr" class="change pf-metric-change '+direction+'" title="'+label+'">'+change+'</small>';
 }
 function performance(r){
   const current=observation(r);
@@ -88,7 +88,7 @@ function performance(r){
     const row=current.platforms[s];
     const cells=columns.map(k=>{
       const mark=row?.stale.includes(k)?'<sup aria-label="מדידה קודמת">*</sup>':'';
-      const change=k==='views'?platformViewChange(row,previous?.platforms[s]):'';
+      const change=platformMetricChange(k,row,previous?.platforms[s]);
       return '<td>'+formatted(row?.[k])+mark+change+'</td>';
     });
     return '<tr><th scope="row"><i class="pf-dot '+s+'"></i>'+platformNames[s]+'</th>'+cells.join('')+'</tr>';

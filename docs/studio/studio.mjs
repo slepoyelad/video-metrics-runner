@@ -1,4 +1,4 @@
-import {renderReport,stamp} from './report.mjs?v=view-deltas-1';
+import {renderReport,stamp} from './report.mjs?v=metric-deltas-2';
 import {openLyrics} from './lyrics-ui.mjs';
 
 const $ = id => document.getElementById(id);
