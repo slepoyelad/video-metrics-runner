@@ -188,7 +188,24 @@ function render(){
   const progress=shelf('בעבודה ובתיקון',work,'',expanded('workBox'));progress.id='workBox';progress.hidden=!work.length;
   host.replaceChildren(music,reviewSection,queue,progress);
 }
-async function metrics(){const r=await read('report.json');$('metrics').innerHTML=renderReport(r);$('updated').textContent='מדידה אחרונה · '+stamp(r.fetchedAt);return r;}
+let metricsRequest, displayedReport;
+function metrics(){
+  if(metricsRequest)return metricsRequest;
+  metricsRequest=read('report.json').then(r=>{
+    if(displayedReport && Date.parse(r.fetchedAt)<=Date.parse(displayedReport.fetchedAt)){
+      $('updated').textContent='מדידה אחרונה · '+stamp(displayedReport.fetchedAt);
+      return displayedReport;
+    }
+    const host=$('metrics');
+    const opened=['.pf-analysis','#numbers .fold','#publishedFold'].filter(s=>host.querySelector(s)?.open);
+    host.innerHTML=renderReport(r);
+    for(const selector of opened)host.querySelector(selector).open=true;
+    $('updated').textContent='מדידה אחרונה · '+stamp(r.fetchedAt);
+    displayedReport=r;
+    return r;
+  }).finally(()=>{metricsRequest=null;});
+  return metricsRequest;
+}
 async function openDesk(){
   [library,decisions]=await Promise.all([read('library.json?ref=mobile-library'),ledger()]);
   render();$('desk').hidden=false;$('login').hidden=true;status('');
@@ -235,5 +252,11 @@ async function updateLibrary(){
     }
   }catch{/* Keep the latest loaded view during transient connection loss. */}
 }
+function syncVisibleReport(){
+  if(document.hidden||$('desk').hidden||$('topRefresh').disabled)return;
+  metrics().catch(()=>{$('updated').textContent=displayedReport?'מדידה אחרונה · '+stamp(displayedReport.fetchedAt)+' · ממתין לסנכרון':'ממתין לסנכרון הנתונים';});
+}
 document.addEventListener('visibilitychange',updateLibrary);
-setInterval(updateLibrary,60000);
+document.addEventListener('visibilitychange',syncVisibleReport);
+window.addEventListener('focus',syncVisibleReport);
+setInterval(()=>{syncVisibleReport();updateLibrary();},60000);
