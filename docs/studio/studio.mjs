@@ -1,5 +1,6 @@
 import {renderReport,stamp} from './report.mjs?v=metric-deltas-2';
 import {openLyrics} from './lyrics-ui.mjs';
+import {showInquiry} from './inquiry-ui.mjs';
 
 const $ = id => document.getElementById(id);
 const owner = location.hostname.split('.')[0];
@@ -143,6 +144,19 @@ function card(item){
   const row=element('article',null,'release'), name=element('strong',item.title);name.dir='auto';
   row.append(name,element('small',[item.language,item.format].filter(Boolean).join(' · ')));return row;
 }
+function inquiryButton(row,item){
+  const info=item.inquiry;
+  if(!info)return;
+  const key='inquire/'+info.incident+'/'+info.attempt;
+  showInquiry(row,info,async()=>{
+    await dispatch('mobile-review.yml',{action:'inquire',song:item.id,version:info.incident,revision:String(info.attempt)});
+    for(let i=0;i<40;i++){
+      await wait(3000);
+      if((await ledger())[key]){decisions[key]=true;return 'הבקשה נשמרה וממתינה לסנכרון עם המחשב.';}
+    }
+    throw Error('בקשת השליחה יצאה, וטרם התקבל אישור שמירה. אפשר לרענן ולבדוק.');
+  },Boolean(decisions[key]&&['new','failed'].includes(info.state)));
+}
 function shelf(title,items,empty,opened=false){
   const d=element('details',null,'list-fold'),s=element('summary'),h=element('h2',title+' ');
   d.open=opened;h.append(element('span',String(items.length),'count'));s.append(h);d.append(s);
@@ -234,13 +248,14 @@ function render(){
       if(item.due)row.append(element('small','מועד מוצע · '+stamp(item.due)+' (ישראל)'));ready.push(row);
     }else{
       const message=state==='error'?(item.issue||'הכנת הסרטון נעצרה.'):state==='correction'?'בתיקון · '+(answer?.note||item.note||''):'בהכנה';
-      row.append(element('small',message));work.push(row);
+      row.append(element('small',message));inquiryButton(row,item);work.push(row);
     }
   }
   for(const p of library.preparation||[]){
     if(library.films.some(f=>f.id===p.id))continue;
     const row=card(p);
     if(p.message)row.append(element('small',p.message));
+    inquiryButton(row,p);
     if(p.audio)row.append(mediaButton(p.audio,'♫ האזנה לגרסה שאושרה'));
     work.push(row);
   }
