@@ -7,7 +7,7 @@ function href(value,allowed){
   try{const u=new URL(value);if(u.protocol==='https:'&&!u.username&&!u.password&&allowed.includes(u.hostname))return esc(u.href);}catch{}
   return '';
 }
-const platformNames={instagram:'אינסטגרם',tiktok:'טיקטוק'};
+const platformNames={instagram:'אינסטגרם',youtube:'יוטיוב',tiktok:'טיקטוק'};
 const platforms=Object.keys(platformNames);
 const metricNames={videos:'סרטונים',views:'צפיות',reactions:'לייקים',comments:'תגובות',followers:'עוקבים'};
 const formatted=value=>Number.isFinite(value)?number.format(value):'—';
@@ -29,9 +29,9 @@ export function observation(r){
 }
 function total(point,key){
   if(!point)return null;
-  if(key==='videos')return point.videos;
+  if(key==='videos')return platforms.every(s=>point.platforms[s])?point.videos:null;
   const values=platforms.map(s=>point.platforms[s]?.[key]);
-  return values.every(Number.isFinite)?values[0]+values[1]:null;
+  return values.every(Number.isFinite)?values.reduce((sum,value)=>sum+value,0):null;
 }
 function kpi(key,current,previous){
   const value=total(current,key),before=total(previous,key);

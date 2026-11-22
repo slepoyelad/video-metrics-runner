@@ -360,6 +360,7 @@ header #updated{font-size:12px;color:var(--muted)}main{width:100%}.release em{di
 .pf .table-wrap td,.pf .table-wrap th{padding:9px 4px;font-variant-numeric:tabular-nums}
 .pf .table-wrap tbody th{font-size:14px;color:var(--text);font-weight:500}
 .pf .table-wrap tbody td{font-weight:500}
+.pf-dot.youtube{background:#e16a32}.pf-line.youtube{stroke:#e16a32}.pf-point.youtube{fill:#e16a32}
 .pf>details.fold>summary{display:flex;align-items:center;justify-content:space-between;list-style:none;padding:12px 14px!important;font-size:14px;min-height:48px}
 .pf>details.fold>summary::after{content:'▾';font-size:12px;color:var(--muted)}
 .pf>details.fold[open]>summary::after{transform:rotate(180deg)}
