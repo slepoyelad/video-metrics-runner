@@ -1,6 +1,6 @@
 import {renderReport,stamp} from './report.mjs?v=metric-deltas-2';
 import {openLyrics} from './lyrics-ui.mjs';
-import {showInquiry} from './inquiry-ui.mjs';
+import {showInquiry} from './inquiry-ui.mjs?v=repair';
 
 const $ = id => document.getElementById(id);
 const owner = location.hostname.split('.')[0];
