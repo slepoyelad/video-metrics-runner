@@ -49,6 +49,30 @@ async function api(path,{method='GET',payload,raw=false}={}){
 const read=async path=>(await api('contents/'+path,{raw:true})).json();
 const dispatch=(workflow,inputs)=>api('actions/workflows/'+workflow+'/dispatches',{method:'POST',payload:{ref:'main',inputs}});
 const ledger=()=>read('mobile/decisions.json');
+let bookings=[], bookingError=false;
+async function readBookings(){
+  const rows=[];
+  for(let page=1;;page++){
+    const releases=await (await api('releases?per_page=100&page='+page)).json();
+    for(const release of releases){
+      if(release.draft||!release.tag_name.startsWith('lr-film-'))continue;
+      const job=JSON.parse(release.body);
+      if(!job.approved)continue;
+      const states=Object.values(job.platforms).map(p=>p.state);
+      rows.push({id:release.tag_name.slice(8),title:job.title,language:job.language,format:job.format,
+        due:job.due,states,asset:release.assets.find(a=>a.name==='video.mp4')?.browser_download_url});
+    }
+    if(releases.length<100)return rows.sort((a,b)=>Date.parse(a.due)-Date.parse(b.due));
+  }
+}
+async function updateBookings(){
+  try{
+    const next=await readBookings(),changed=bookingError||JSON.stringify(next)!==JSON.stringify(bookings);
+    bookings=next;bookingError=false;return changed;
+  }catch{
+    const changed=!bookingError;bookingError=true;return changed;
+  }
+}
 function stopPlayer(){
   if(closeEmbed){closeEmbed();closeEmbed=null;}
   if(!currentPlayer)return;
@@ -128,6 +152,17 @@ function render(){
   stopPlayer();const host=$('shelves');
   const expanded=id=>host.querySelector('#'+id)?.open??false;
   const songs=[],review=[],ready=[],work=[];
+  for(const job of bookings){
+    if(job.states.includes('published')||job.states.every(s=>s==='inbox'))continue;
+    const row=card(job);
+    const label=job.states.every(s=>s==='queued')?'מתוזמן':job.states.includes('needs_connection')?'נדרש חיבור לערוץ':'בתהליך פרסום';
+    row.append(element('small',label+' · '+stamp(job.due)+' (ישראל)'));
+    if(job.asset){
+      const link=element('a','הורדת הסרטון המתוזמן');
+      link.href=job.asset;link.target='_blank';link.rel='noopener noreferrer';row.append(link);
+    }
+    ready.push(row);
+  }
   for(const item of library.songs){
     const row=card(item);
     row.prepend(element('em',item.format==='צ׳יל'?'ראפ צ׳יל · הנחיית 98 BPM':'ראפ מרכזי'));
@@ -184,6 +219,7 @@ function render(){
     row.append(replace);songs.push(row);
   }
   for(const item of library.films){
+    if(bookings.some(job=>job.id===item.id))continue;
     const row=card(item), answer=decisions['film/'+item.id+'/'+item.revision];
     const state=item.state==='review' && answer ? (answer.action==='approve'?'final':'correction') : item.state;
     if(item.video)row.append(mediaButton(item.video,'▶ צפייה בסרטון'));
@@ -214,6 +250,11 @@ function render(){
   fold.append(element('summary','כל הסרטונים שמחכים לאישור'),...(review.length>1?review.slice(1):[element('p',review.length?'הסקיצה מופיעה למעלה.':'כל הסקיצות נבדקו.','caption')]));
   panel.append(fold);reviewSection.append(panel);
   const queue=shelf('מוכנים לפרסום',ready,'התור ריק.',expanded('qbox'));queue.id='qbox';
+  if(bookingError){
+    const body=queue.querySelector('.release-list');
+    if(!ready.length){body.replaceChildren();queue.querySelector('.count').textContent='—';}
+    body.prepend(element('small','עדכון התזמונים מ־GitHub נכשל. אפשר לרענן כדי לנסות שוב.'));
+  }
   queue.querySelector('h2').append(element('small','צ׳יל 17:00 · ראפ מרכזי 23:00','slot'));
   const progress=shelf('בעבודה ובתיקון',work,'',expanded('workBox'));progress.id='workBox';progress.hidden=!work.length;
   host.replaceChildren(music,reviewSection,queue,progress);
@@ -237,7 +278,7 @@ function metrics(){
   return metricsRequest;
 }
 async function openDesk(){
-  [library,decisions]=await Promise.all([read('library.json?ref=mobile-library'),ledger()]);
+  [library,decisions]=await Promise.all([read('library.json?ref=mobile-library'),ledger(),updateBookings()]);
   render();$('desk').hidden=false;$('login').hidden=true;status('');
   $('history').hidden=false;$('topRefresh').hidden=false;
   api('contents/avatar.png?ref=mobile-library',{raw:true}).then(r=>r.blob()).then(b=>{
@@ -275,9 +316,9 @@ else $('login').hidden=false;
 async function updateLibrary(){
   if(document.hidden||$('desk').hidden||busy||currentPlayer||closeEmbed||$('confirmDialog').open)return;
   try{
-    const [newLib,newDecisions]=await Promise.all([read('library.json?ref=mobile-library'),ledger()]);
+    const [newLib,newDecisions,bookingsChanged]=await Promise.all([read('library.json?ref=mobile-library'),ledger(),updateBookings()]);
     if(currentPlayer||closeEmbed||busy||$('confirmDialog').open)return;
-    if(newLib.updatedAt!==library.updatedAt||JSON.stringify(newDecisions)!==JSON.stringify(decisions)){
+    if(bookingsChanged||newLib.updatedAt!==library.updatedAt||JSON.stringify(newDecisions)!==JSON.stringify(decisions)){
       library=newLib;decisions=newDecisions;render();
     }
   }catch{/* Keep the latest loaded view during transient connection loss. */}
