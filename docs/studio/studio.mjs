@@ -194,6 +194,7 @@ function render(){
     work.push(row);
   }
   const music=shelf('אישור Suno',songs,'אין כרגע גרסאות שממתינות לבחירה.',expanded('songsFold'));music.id='songsFold';
+  if(library.musicPlan?.catchUp)music.querySelector('.release-list').prepend(element('small','מכינים צ׳יל עד לאיזון תור הפרסום.'));
   const reviewSection=element('section'), heading=element('h2','מחכים לאישור ','stage');
   heading.append(element('span',String(review.length),'count'));reviewSection.append(heading);
   const panel=element('div',null,'card'), fold=element('details');fold.id='reviewFold';fold.open=expanded('reviewFold');
