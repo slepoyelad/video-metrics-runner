@@ -110,7 +110,16 @@ function render(){
     for(const v of item.versions){
       const group=element('div',null,'version');
       if(v.audio)group.append(mediaButton(v.audio,'▶ האזנה · '+v.label),button('בחירת '+v.label,()=>ask('select',item,v)));
-      else group.append(element('small',v.label+' · הקובץ ממתין לסנכרון'));
+      else if(/^[0-9a-f-]{36}$/.test(v.id)&&v.suno==='https://suno.com/song/'+v.id){
+        const listen=button('▶ האזנה ב־Suno · '+v.label,()=>{
+          stopPlayer();
+          const frame=element('iframe');frame.title=item.title+' · '+v.label;
+          frame.allow='autoplay';frame.src='https://suno.com/embed/'+v.id;
+          const link=element('a','פתיחה בחשבון Suno ↗');link.href=v.suno;link.target='_blank';link.rel='noopener noreferrer';
+          listen.replaceWith(frame,link);
+        });
+        group.append(listen,button('בחירת '+v.label,()=>ask('select',item,v)));
+      }else group.append(element('small',v.label+' · הקובץ ממתין לסנכרון'));
       row.append(group);
     }
     songs.push(row);
