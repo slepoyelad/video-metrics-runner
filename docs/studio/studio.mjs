@@ -151,7 +151,7 @@ function shelf(title,items,empty,opened=false){
 function render(){
   stopPlayer();const host=$('shelves');
   const expanded=id=>host.querySelector('#'+id)?.open??false;
-  const songs=[],review=[],ready=[],work=[];
+  const songs=[],drafts=[],review=[],ready=[],work=[];
   for(const job of bookings){
     if(job.states.includes('published')||job.states.every(s=>s==='inbox'))continue;
     const row=card(job);
@@ -216,7 +216,9 @@ function render(){
     }
     const replace=button('מחיקת רעיון ויצירת רעיון חדש',()=>ask('replace',item));
     replace.disabled=waiting||!item.versions.length||item.versions.some(v=>v.suno!=='https://suno.com/song/'+v.id);
-    row.append(replace);songs.push(row);
+    row.append(replace);
+    if(item.versions.length)songs.push(row);
+    else{row.prepend(element('small','טיוטת מילים לאישור'));drafts.push(row);}
   }
   for(const item of library.films){
     if(bookings.some(job=>job.id===item.id))continue;
@@ -242,6 +244,9 @@ function render(){
     work.push(row);
   }
   const music=shelf('אישור Suno',songs,'אין כרגע גרסאות שממתינות לבחירה.',expanded('songsFold'));music.id='songsFold';
+  const musicBody=music.querySelector('.release-list');
+  for(const [format,message] of Object.entries(library.refillStatus||{}))musicBody.append(element('small','ראפ '+format+' · '+message));
+  musicBody.append(...drafts);
   if(library.musicPlan?.catchUp)music.querySelector('.release-list').prepend(element('small','מכינים צ׳יל עד לאיזון תור הפרסום.'));
   const reviewSection=element('section'), heading=element('h2','מחכים לאישור ','stage');
   heading.append(element('span',String(review.length),'count'));reviewSection.append(heading);
