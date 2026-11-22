@@ -193,7 +193,10 @@ function render(){
       review.push(row);
     }else if(state==='final'){
       if(item.due)row.append(element('small','מועד מוצע · '+stamp(item.due)+' (ישראל)'));ready.push(row);
-    }else{row.append(element('small',state==='correction'?'בתיקון · '+(answer?.note||item.note||''):'בהכנה'));work.push(row);}
+    }else{
+      const message=state==='error'?(item.issue||'הכנת הסרטון נעצרה.'):state==='correction'?'בתיקון · '+(answer?.note||item.note||''):'בהכנה';
+      row.append(element('small',message));work.push(row);
+    }
   }
   for(const p of library.preparation||[]){
     if(library.films.some(f=>f.id===p.id))continue;
