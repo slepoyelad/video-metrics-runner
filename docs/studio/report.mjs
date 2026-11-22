@@ -18,10 +18,12 @@ export function observation(r){
   for(const c of r.channels.filter(c=>platforms.includes(c.service))){
     const posts=c.posts||[];
     for(const p of posts)clips.add(groupKey(p,c.service));
-    const row={videos:posts.length,followers:c.followersUnavailable?null:c.followers};
+    const row={videos:posts.length,followers:c.followers,stale:[]};
+    if(c.followersUnavailable&&Number.isFinite(c.followers))row.stale.push('followers');
     for(const key of ['views','reactions','comments']){
       const values=posts.map(p=>postMetric(p,key));
-      row[key]=!c.measurementErrors?.length&&values.every(Number.isFinite)?values.reduce((a,b)=>a+b,0):null;
+      row[key]=(posts.length||!c.measurementErrors?.length)&&values.every(Number.isFinite)?values.reduce((a,b)=>a+b,0):null;
+      if(posts.some(p=>{const m=p.metrics?.find(m=>m.type===key);return m&&((m.observedAt&&r.runStarted)?m.observedAt<r.runStarted:c.measurementErrors?.length)}))row.stale.push(key);
     }
     rows[c.service]=row;
   }
@@ -31,12 +33,17 @@ function total(point,key){
   if(!point)return null;
   if(key==='videos')return platforms.every(s=>point.platforms[s])?point.videos:null;
   const values=platforms.map(s=>point.platforms[s]?.[key]);
-  return values.every(Number.isFinite)?values.reduce((sum,value)=>sum+value,0):null;
+  const known=values.filter(Number.isFinite);
+  return known.length?known.reduce((sum,value)=>sum+value,0):null;
 }
 function kpi(key,current,previous){
   const value=total(current,key),before=total(previous,key);
   let change='';
-  if(Number.isFinite(value)&&Number.isFinite(before)){
+  const coverage=p=>platforms.filter(s=>Number.isFinite(p?.platforms[s]?.[key])).length;
+  const stale=p=>platforms.some(s=>p?.platforms[s]?.stale?.includes(key));
+  if(Number.isFinite(value)&&coverage(current)<platforms.length)change='<small class="change same">סכום חלקי</small>';
+  else if(stale(current))change='<small class="change same">כולל נתון קודם</small>';
+  else if(Number.isFinite(value)&&Number.isFinite(before)&&coverage(previous)===platforms.length&&!stale(previous)){
     const delta=value-before;
     change=delta===0?'<small class="change same">ללא שינוי</small>':
       '<div class="pf-change"><small class="change '+(delta>0?'up':'down')+'"><bdi>'+(delta>0?'▲ +':'▼ ')+formatted(delta)+'</bdi></small><small>היה '+formatted(before)+'</small></div>';
@@ -53,7 +60,7 @@ function chart(points,key){
     const flush=()=>{if(segment.length)lines+='<polyline class="pf-line '+s+'" points="'+segment.join(' ')+'"/>';segment=[];};
     for(const p of points){
       const v=p.platforms[s]?.[key];
-      if(!Number.isFinite(v)){flush();continue;}
+      if(!Number.isFinite(v)||p.platforms[s]?.stale?.includes(key)){flush();continue;}
       const cx=x(p).toFixed(1),cy=(96-82*v/max).toFixed(1);
       segment.push(cx+','+cy);
       lines+='<circle class="pf-point '+s+'" cx="'+cx+'" cy="'+cy+'" r="2.8"><title>'+platformNames[s]+' · '+stamp(p.at)+' · '+formatted(v)+'</title></circle>';
@@ -68,13 +75,19 @@ function performance(r){
   const points=[...(r.performanceHistory||r.history||[]).filter(p=>p.platforms&&Date.parse(p.at)<Date.parse(current.at)&&(!r.resetAt||Date.parse(p.at)>=Date.parse(r.resetAt))),current];
   const previous=points.at(-2);
   const columns=Object.keys(metricNames);
-  const rows=platforms.map(s=>'<tr><th scope="row"><i class="pf-dot '+s+'"></i>'+platformNames[s]+'</th>'+columns.map(k=>'<td>'+formatted(current.platforms[s]?.[k])+'</td>').join('')+'</tr>').join('');
+  const rows=platforms.map(s=>'<tr><th scope="row"><i class="pf-dot '+s+'"></i>'+platformNames[s]+'</th>'+columns.map(k=>'<td>'+formatted(current.platforms[s]?.[k])+(current.platforms[s]?.stale.includes(k)?'<sup aria-label="מדידה קודמת">*</sup>':'')+'</td>').join('')+'</tr>').join('');
   const entries=r.channels.filter(c=>platforms.includes(c.service)).flatMap(c=>c.posts.map(p=>({p,s:c.service,views:postMetric(p,'views')}))).filter(e=>Number.isFinite(e.views)).sort((a,b)=>b.views-a.views);
   const ranked=entries.map(({p,s,views})=>'<li><bdi>'+esc(p.clipTitle||p.text||'סרטון')+'</bdi><small>'+platformNames[s]+' · '+formatted(views)+' צפיות · '+formatted(postMetric(p,'reactions'))+' לייקים</small></li>').join('');
   const missing=platforms.filter(s=>!Number.isFinite(current.platforms[s]?.followers));
   const analysis='<details class="pf-analysis"><summary>✨ ניתוח סרטונים</summary><div><b>הסרטונים לפי מספר צפיות</b>'+(ranked?'<ol>'+ranked+'</ol>':'<p>טרם התקבלו צפיות לניתוח.</p>')+'</div></details>';
   const cards=['views','reactions','followers','videos'].map(k=>kpi(k,current,previous)).join('');
-  const note=missing.length?'<p class="caption">טרם התקבל מספר עוקבים מ־'+missing.map(s=>platformNames[s]).join(' ומ־')+'.</p>':'';
+  const freshness=r.channels.filter(c=>current.platforms[c.service]?.stale.length).map(c=>{
+    const keys=current.platforms[c.service].stale;
+    const times=[...(keys.includes('followers')?[c.followersAt]:[]),...c.posts.flatMap(p=>p.metrics.filter(m=>keys.includes(m.type)).map(m=>m.observedAt))].filter(t=>t&&(!r.runStarted||t<r.runStarted)).sort();
+    const expired=c.measurementErrors?.includes('Meta 401/190/463');
+    return '<p class="caption">* '+platformNames[c.service]+' · '+(expired?'פג תוקף החיבור. ':'')+'הנתונים המסומנים נשמרו ממדידה קודמת'+(times.length?' ב־'+stamp(times[0]):'')+'.</p>';
+  }).join('');
+  const note=freshness+(missing.length?'<p class="caption">טרם התקבל מספר עוקבים מ־'+missing.map(s=>platformNames[s]).join(' ומ־')+'.</p>':'');
   const table='<div class="table-wrap"><table aria-label="ביצועים לפי פלטפורמה"><thead><tr><th>פלטפורמה</th>'+Object.values(metricNames).map(v=>'<th>'+v+'</th>').join('')+'</tr></thead><tbody>'+rows+'</tbody></table>'+note+'</div>';
   const legend=platforms.map(s=>'<span><i class="pf-dot '+s+'"></i>'+platformNames[s]+'</span>').join('');
   return '<section id="numbers" class="pf">'+analysis+'<h2>המספרים</h2><div class="kpis">'+cards+'</div><p class="caption">'+(previous?'השינוי לעומת העדכון הקודם · ':'')+'מדידה אחרונה '+stamp(current.at)+'</p>'+table+'<details class="fold"><summary>גרפים: צפיות ועוקבים לאורך זמן</summary><div class="inside"><div class="pf-legend">'+legend+'</div>'+chart(points,'views')+chart(points,'followers')+'</div></details></section>';
