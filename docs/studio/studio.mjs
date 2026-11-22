@@ -28,7 +28,17 @@ async function api(path,{method='GET',payload,raw=false}={}){
     headers:{Authorization:'Bearer '+token,Accept:raw?'application/vnd.github.raw+json':'application/vnd.github+json',...(payload?{'Content-Type':'application/json'}:{})},
     body:payload?JSON.stringify(payload):undefined
   });
-  if(!response.ok)throw Error([401,403,404].includes(response.status)?'בדוק את תוקף המפתח ואת הרשאות המאגר ב־GitHub.':'שגיאה בחיבור ל־GitHub ('+response.status+').');
+  if(!response.ok){
+    const code=response.status;
+    if(code===401)throw Error('GitHub דחה את המפתח (401). הדבק שוב את הקוד המלא שהעתקת מ־GitHub ובדוק שהוא בתוקף.');
+    if(code===429 || (code===403 && (response.headers.get('x-ratelimit-remaining')==='0' || response.headers.has('retry-after'))))
+      throw Error('GitHub הגביל זמנית את מספר הבקשות ('+code+'). נסה שוב מאוחר יותר עם אותו מפתח.');
+    if(code===403 || code===404){
+      const access=method==='GET'?'Contents → Read-only':'Actions → Read and write';
+      throw Error('הבקשה ל־'+owner+'/'+repo+' לא הצליחה ('+code+'). בהגדרות המפתח ודא שהמאגר מסומן ושיש הרשאת '+access+'.');
+    }
+    throw Error('שגיאה בחיבור ל־GitHub ('+code+').');
+  }
   return response;
 }
 const read=async path=>(await api('contents/'+path,{raw:true})).json();
