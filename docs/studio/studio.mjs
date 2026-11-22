@@ -110,7 +110,7 @@ function ask(action,item,version){
   const clips=replace?[...new Set(item.versions.map(v=>v.id))].sort():[];
   pending={action,song:item.id,version:replace?clips.join(','):version?.id||'',revision:rerun||replace?item.runRevision:String(item.revision??''),note:''};
   $('question').textContent={select:'לאשר את גרסת השיר?',approve:'להעביר למוכנים לפרסום?',correct:'לשלוח בקשת תיקון?',rerun:'להפיק שתי גרסאות חדשות ב־Suno?',replace:'למחוק את הרעיון ולהכין רעיון חדש?'}[action];
-  $('detail').textContent=[item.title,version?.label,replace?clips.length+' גרסאות יועברו לפח ב־Suno. המקום יתפנה לרעיון אחר.':null,rerun||replace?'עלות לזוג חדש · '+item.rerunCost+' קרדיטים במסגרת המכסה':null].filter(Boolean).join(' · ');
+  $('detail').textContent=[item.title,version?.label,replace?(clips.length?clips.length+' גרסאות יועברו לפח ב־Suno. המקום יתפנה לרעיון אחר.':'טיוטת המילים תוסר מהלוח.'):null,rerun||(replace&&clips.length)?'עלות לזוג חדש · '+item.rerunCost+' קרדיטים במסגרת המכסה':null].filter(Boolean).join(' · ');
   $('confirm').textContent=replace?'אישור מחיקה והחלפה':'אישור';
   $('feedback').hidden=!needsNote; $('note').required=needsNote;$('note').maxLength=rerun?350:800;$('note').value='';
   $('noteLabel').textContent=rerun?'מה לשנות בביצוע?':'מה לתקן בסקיצה?';
@@ -215,7 +215,8 @@ function render(){
       }
     }
     const replace=button('מחיקת רעיון ויצירת רעיון חדש',()=>ask('replace',item));
-    replace.disabled=waiting||!item.versions.length||item.versions.some(v=>v.suno!=='https://suno.com/song/'+v.id);
+    const unrecordedDraft=item.runRevision==='initial'&&['ready','writing','error'].includes(item.lyricDraft?.state);
+    replace.disabled=waiting||(!item.versions.length&&!unrecordedDraft)||item.versions.some(v=>v.suno!=='https://suno.com/song/'+v.id);
     row.append(replace);
     if(item.versions.length)songs.push(row);
     else{row.prepend(element('small','טיוטת מילים לאישור'));drafts.push(row);}
