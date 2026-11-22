@@ -15,11 +15,13 @@ async function call(path,options={}){
   if(!res.ok)throw Error([401,403,404].includes(res.status)?'בדוק שהמפתח בתוקף ושיש לו גישה לשני המאגרים.':'GitHub החזיר שגיאה '+res.status);
   return res;
 }
+let refreshRepo=runner;
 async function loadReport(){
   const res=await call(repo+'/contents/report.json',{headers:{Accept:'application/vnd.github.raw+json'}});
   const r=await res.json();if(!Array.isArray(r.channels))throw Error('הדוח אינו זמין.');
   $('cards').replaceChildren();$('videos').replaceChildren();const groups=new Map();
   $('updated').textContent='בדיקה אחרונה · '+time(r.fetchedAt)+' (שעון ישראל)';
+  refreshRepo=r.refreshWorkflow==='private'?repo:runner;
   for(const c of r.channels){
     const card=node('article');card.className=c.service;card.append(node('h3',names[c.service]),node('small','@'+c.label));const nums=node('div');nums.className='numbers';
     for(const [k,label] of Object.entries(metrics)){
@@ -52,7 +54,7 @@ document.querySelector('form').onsubmit=async e=>{e.preventDefault();repo=$('rep
 }catch(err){$('status').textContent=err.message;}};
 $('disconnect').onclick=()=>{sessionStorage.removeItem(key+'token');localStorage.removeItem(key+'token');location.reload();};
 $('refresh').onclick=async()=>{const button=$('refresh');button.disabled=true;const id=crypto.randomUUID();
-  try{await call(runner+'/actions/workflows/refresh.yml/dispatches',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ref:'main',inputs:{request_id:id}})});
+  try{await call(refreshRepo+'/actions/workflows/refresh.yml/dispatches',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ref:'main',inputs:{request_id:id}})});
     $('status').textContent='GitHub בודק את המונים. התוצאות יופיעו כאן.';let completed=false;
     for(let i=0;i<45;i++){await new Promise(ok=>setTimeout(ok,4000));const r=await loadReport();if(r.requestId===id){completed=true;break;}}
     $('status').textContent=completed?'הבדיקה הסתיימה. שעת המדידה מופיעה ליד כל מונה.':'התוצאה עדיין לא הגיעה. אפשר לפתוח את הדף שוב בהמשך.';
