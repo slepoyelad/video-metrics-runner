@@ -17,6 +17,9 @@
 .release-list>.caption{padding:10px 0}
 .media-control audio,.media-control video{display:block;max-width:100%;margin:10px auto}
 .media-control video{max-height:60dvh;border-radius:12px}
+.queue-move{float:inline-end;display:flex;gap:4px;margin-inline-start:10px}
+.release .queue-move button{min-width:36px;min-height:36px;margin:0;padding:4px 8px}
+.queue-move button:disabled{opacity:.35}
 .version{border-top:1px solid var(--line);padding:8px 0}
 .version .media-control{display:inline-block;vertical-align:top}
 textarea{display:block;margin:8px 0;width:100%;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:8px;font:inherit;padding:8px}

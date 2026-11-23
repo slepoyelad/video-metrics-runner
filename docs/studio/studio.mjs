@@ -51,6 +51,7 @@ const read=async path=>(await api('contents/'+path,{raw:true})).json();
 const dispatch=(workflow,inputs)=>api('actions/workflows/'+workflow+'/dispatches',{method:'POST',payload:{ref:'main',inputs}});
 const ledger=()=>read('mobile/decisions.json');
 let bookings=[], bookingError=false;
+let queueOrder={revision:'initial',slots:{},waiting:{}};
 async function readBookings(){
   const rows=[];
   for(let page=1;;page++){
@@ -61,15 +62,21 @@ async function readBookings(){
       if(!job.approved)continue;
       const states=Object.values(job.platforms).map(p=>p.state);
       rows.push({id:release.tag_name.slice(8),title:job.title,language:job.language,format:job.format,
-        due:job.due,states,asset:release.assets.find(a=>a.name==='video.mp4')?.browser_download_url});
+        due:job.due,states,digest:job.sha256,asset:release.assets.find(a=>a.name==='video.mp4')?.browser_download_url});
     }
     if(releases.length<100)return rows.sort((a,b)=>Date.parse(a.due)-Date.parse(b.due));
   }
 }
 async function updateBookings(){
   try{
-    const next=await readBookings(),changed=bookingError||JSON.stringify(next)!==JSON.stringify(bookings);
-    bookings=next;bookingError=false;return changed;
+    const [next,order]=await Promise.all([readBookings(),read('publishing/queue-order.json')]);
+    for(const job of next){
+      const swap=order.slots[job.id];
+      if(swap?.original===job.due)job.due=swap.due;
+    }
+    next.sort((a,b)=>Date.parse(a.due)-Date.parse(b.due));
+    const changed=bookingError||order.revision!==queueOrder.revision||JSON.stringify(next)!==JSON.stringify(bookings);
+    queueOrder=order;bookings=next;bookingError=false;return changed;
   }catch{
     const changed=!bookingError;bookingError=true;return changed;
   }
@@ -162,16 +169,54 @@ function shelf(title,items,empty,opened=false){
   d.open=opened;h.append(element('span',String(items.length),'count'));s.append(h);d.append(s);
   const body=element('div',null,'release-list');body.append(...(items.length?items:[element('p',empty,'caption')]));d.append(body);return d;
 }
+async function moveFilm(first,second){
+  if(busy||bookingError)return;
+  busy=true;
+  const request=crypto.randomUUID();
+  const change={first:first.id,second:second.id,first_due:first.due,second_due:second.due,revision:queueOrder.revision,request};
+  const buttons=document.querySelectorAll('#qbox .queue-move button');
+  for(const b of buttons)b.disabled=true;
+  status('שומר את הסדר ב־GitHub…');
+  try{
+    await dispatch('queue-order.yml',{request_id:request,move:JSON.stringify(change)});
+    for(let i=0;i<40;i++){
+      await wait(3000);
+      const order=await read('publishing/queue-order.json');
+      if(order.revision===request){status('סדר הסרטונים נשמר.');return;}
+      if(order.revision!==change.revision)throw Error('התור השתנה במכשיר אחר. בדוק את הסדר המעודכן.');
+      if(i%3===2){
+        const runs=await (await api('actions/workflows/queue-order.yml/runs?event=workflow_dispatch&per_page=10')).json();
+        const run=runs.workflow_runs.find(r=>r.display_title==='Queue move '+request);
+        if(run?.status==='completed'&&run.conclusion!=='success')throw Error('השינוי נדחה. בדוק את המועדים המעודכנים ונסה שוב.');
+      }
+    }
+    status('הבקשה עדיין בתור ב־GitHub. הסדר יתעדכן לאחר השמירה.');
+  }catch(e){status(e.message);}finally{await updateBookings();busy=false;render();}
+}
+function moveControls(row,item,items){
+  const peers=items.filter(x=>x.format===item.format);
+  const i=peers.findIndex(x=>x.id===item.id),group=element('div',null,'queue-move');
+  for(const [step,label,mark] of [[-1,'הקדמה','▲'],[1,'דחייה','▼']]){
+    const other=i<0?null:peers[i+step],b=button(mark,()=>moveFilm(item,other));
+    b.disabled=busy||bookingError||!other;
+    b.title=other?label+' · החלפה עם '+other.title:label+' · אין משבצת זמינה';
+    b.setAttribute('aria-label',b.title);group.append(b);
+  }
+  row.prepend(group);
+}
 function render(){
   stopPlayer();const host=$('shelves');
   const expanded=id=>host.querySelector('#'+id)?.open??false;
   const songs=[],drafts=[],review=[],ready=[],work=[];
+  const scheduled=bookings.filter(j=>j.states.length&&j.states.every(s=>s==='queued')&&Date.parse(j.due)>Date.now()+60000);
   for(const job of bookings){
     if(job.states.includes('published')||job.states.every(s=>s==='inbox'))continue;
     const row=card(job);
     const label=job.states.every(s=>s==='queued')?'מתוזמן':job.states.includes('needs_connection')?'נדרש חיבור לערוץ':'בתהליך פרסום';
     row.append(element('small',label+' · '+stamp(job.due)+' (ישראל)'));
+    moveControls(row,job,scheduled);
     if(job.asset){
+      if(/^[a-f0-9]{64}$/.test(job.digest))row.append(mediaButton('media/'+job.digest+'.mp4','▶ צפייה בסרטון המתוזמן'));
       const link=element('a','הורדת הסרטון המתוזמן');
       link.href=job.asset;link.target='_blank';link.rel='noopener noreferrer';row.append(link);
     }
@@ -235,7 +280,15 @@ function render(){
     if(item.versions.length)songs.push(row);
     else{row.prepend(element('small','טיוטת מילים לאישור'));drafts.push(row);}
   }
-  for(const item of library.films){
+  const waiting=library.films.filter(f=>f.state==='final'&&!bookings.some(j=>j.id===f.id));
+  const ordered=[...waiting];
+  for(const [format,ids] of Object.entries(queueOrder.waiting)){
+    const same=waiting.filter(f=>f.format===format);
+    const sorted=[...new Set([...ids.map(id=>same.find(f=>f.id===id)).filter(Boolean),...same])];
+    let i=0;
+    ordered.forEach((f,n)=>{if(f.format===format)ordered[n]=sorted[i++];});
+  }
+  for(const item of [...ordered,...library.films.filter(f=>!waiting.includes(f))]){
     if(bookings.some(job=>job.id===item.id))continue;
     const row=card(item), answer=decisions['film/'+item.id+'/'+item.revision];
     const state=item.state==='review' && answer ? (answer.action==='approve'?'final':'correction') : item.state;
@@ -245,6 +298,7 @@ function render(){
       if(item.video)row.append(button('אישור הסרטון',()=>ask('approve',item)),button('בקשת תיקון',()=>ask('correct',item)));
       review.push(row);
     }else if(state==='final'){
+      moveControls(row,item,ordered);
       if(item.due)row.append(element('small','מועד מוצע · '+stamp(item.due)+' (ישראל)'));ready.push(row);
     }else{
       const message=state==='error'?(item.issue||'הכנת הסרטון נעצרה.'):state==='correction'?'בתיקון · '+(answer?.note||item.note||''):'בהכנה';
