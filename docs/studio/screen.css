@@ -20,6 +20,9 @@
 .queue-move{float:inline-end;display:flex;gap:4px;margin-inline-start:10px}
 .release .queue-move button{min-width:36px;min-height:36px;margin:0;padding:4px 8px}
 .queue-move button:disabled{opacity:.35}
+.queue-move select{max-width:9em;min-width:0;align-self:center;font:inherit;font-size:.82rem}
+.move-feedback,#queueNotice:not(:empty){display:block;color:var(--text);padding-block:7px}
+@media(max-width:540px){.queue-move{float:none;margin:0 0 5px;justify-content:flex-start}.queue-move select{max-width:48%}}
 .version{border-top:1px solid var(--line);padding:8px 0}
 .version .media-control{display:inline-block;vertical-align:top}
 textarea{display:block;margin:8px 0;width:100%;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:8px;font:inherit;padding:8px}

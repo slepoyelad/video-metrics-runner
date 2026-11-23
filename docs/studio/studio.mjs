@@ -62,7 +62,7 @@ async function readBookings(){
       if(!job.approved)continue;
       const states=Object.values(job.platforms).map(p=>p.state);
       rows.push({id:release.tag_name.slice(8),title:job.title,language:job.language,format:job.format,
-        due:job.due,states,digest:job.sha256,asset:release.assets.find(a=>a.name==='video.mp4')?.browser_download_url});
+        due:job.due,standby:!!job.standby,states,digest:job.sha256,asset:release.assets.find(a=>a.name==='video.mp4')?.browser_download_url});
     }
     if(releases.length<100)return rows.sort((a,b)=>Date.parse(a.due)-Date.parse(b.due));
   }
@@ -72,9 +72,9 @@ async function updateBookings(){
     const [next,order]=await Promise.all([readBookings(),read('publishing/queue-order.json')]);
     for(const job of next){
       const swap=order.slots[job.id];
-      if(swap?.original===job.due)job.due=swap.due;
+      job.due=swap?.original===job.due?swap.due:job.standby?null:job.due;
     }
-    next.sort((a,b)=>Date.parse(a.due)-Date.parse(b.due));
+    next.sort((a,b)=>(Date.parse(a.due)||Infinity)-(Date.parse(b.due)||Infinity));
     const changed=bookingError||order.revision!==queueOrder.revision||JSON.stringify(next)!==JSON.stringify(bookings);
     queueOrder=order;bookings=next;bookingError=false;return changed;
   }catch{
@@ -171,18 +171,25 @@ function shelf(title,items,empty,opened=false){
 }
 async function moveFilm(first,second){
   if(busy||bookingError)return;
+  const assign=Boolean(first.due)!==Boolean(second.due);
+  const incoming=first.due?second:first, outgoing=first.due?first:second;
+  if(assign&&!window.confirm('לשבץ את '+incoming.title+' ב־'+stamp(outgoing.due)+' במקום '+outgoing.title+'? הסרטון שיוחלף יחכה למועד חדש.'))return;
   busy=true;
   const request=crypto.randomUUID();
-  const change={first:first.id,second:second.id,first_due:first.due,second_due:second.due,revision:queueOrder.revision,request};
-  const buttons=document.querySelectorAll('#qbox .queue-move button');
+  const change={first:first.id,second:second.id,first_due:first.due,second_due:second.due,revision:queueOrder.revision,request,assign,digest:incoming.digest};
+  const buttons=document.querySelectorAll('#qbox .queue-move button,#qbox .queue-move select');
   for(const b of buttons)b.disabled=true;
-  status('שומר את הסדר ב־GitHub…');
+  const selectedRow=()=>Array.from(document.querySelectorAll('#qbox article')).find(el=>el.dataset.song===first.id);
+  const message=element('small','שומר את המקום החדש…','move-feedback');message.setAttribute('role','status');selectedRow()?.prepend(message);
+  const notify=m=>{status(m);const hint=$('queueNotice');if(hint)hint.textContent=m;};
+  notify('שומר את ההחלפה בין '+first.title+' לבין '+second.title+'…');
+  let result='';
   try{
     await dispatch('queue-order.yml',{request_id:request,move:JSON.stringify(change)});
     for(let i=0;i<40;i++){
       await wait(3000);
       const order=await read('publishing/queue-order.json');
-      if(order.revision===request){status('סדר הסרטונים נשמר.');return;}
+      if(order.revision===request){result='נשמר · '+first.title+' ו־'+second.title+' החליפו מקומות.';return;}
       if(order.revision!==change.revision)throw Error('התור השתנה במכשיר אחר. בדוק את הסדר המעודכן.');
       if(i%3===2){
         const runs=await (await api('actions/workflows/queue-order.yml/runs?event=workflow_dispatch&per_page=10')).json();
@@ -190,36 +197,58 @@ async function moveFilm(first,second){
         if(run?.status==='completed'&&run.conclusion!=='success')throw Error('השינוי נדחה. בדוק את המועדים המעודכנים ונסה שוב.');
       }
     }
-    status('הבקשה עדיין בתור ב־GitHub. הסדר יתעדכן לאחר השמירה.');
-  }catch(e){status(e.message);}finally{await updateBookings();busy=false;render();}
+    result='הבקשה עדיין בתור ב־GitHub. הסדר יתעדכן לאחר השמירה.';
+  }catch(e){result=e.message;}finally{
+    await updateBookings();busy=false;render();notify(result);
+    const moved=selectedRow();moved?.prepend(element('small',result,'move-feedback'));
+    if($('qbox').open)moved?.scrollIntoView({block:'center',behavior:'smooth'});
+  }
 }
 function moveControls(row,item,items){
   const peers=items.filter(x=>x.format===item.format);
   const i=peers.findIndex(x=>x.id===item.id),group=element('div',null,'queue-move');
+  const select=element('select');
+  select.setAttribute('aria-label','העברת '+item.title+' למקום אחר');
+  select.append(new Option('בחירת מקום…',''));
+  for(const peer of peers.filter(x=>x.id!==item.id)){
+    select.append(new Option('#'+(items.indexOf(peer)+1)+' · '+peer.title+(peer.due?' · '+stamp(peer.due):' · ממתין למועד'),peer.id));
+  }
+  select.disabled=i<0||peers.length<2||bookingError;
+  select.onchange=()=>{const target=peers.find(p=>p.id===select.value);select.value='';if(target)moveFilm(item,target);};
   for(const [step,label,mark] of [[-1,'הקדמה','▲'],[1,'דחייה','▼']]){
     const other=i<0?null:peers[i+step],b=button(mark,()=>moveFilm(item,other));
     b.disabled=busy||bookingError||!other;
     b.title=other?label+' · החלפה עם '+other.title:label+' · אין משבצת זמינה';
     b.setAttribute('aria-label',b.title);group.append(b);
   }
-  row.prepend(group);
+  group.append(select);row.prepend(group);
 }
 function render(){
   stopPlayer();const host=$('shelves');
   const expanded=id=>host.querySelector('#'+id)?.open??false;
   const songs=[],drafts=[],review=[],ready=[],work=[];
-  const scheduled=bookings.filter(j=>j.states.length&&j.states.every(s=>s==='queued')&&Date.parse(j.due)>Date.now()+60000);
-  for(const job of bookings){
-    if(job.states.includes('published')||job.states.every(s=>s==='inbox'))continue;
+  const active=bookings.filter(j=>!j.states.includes('published')&&!j.states.every(s=>s==='inbox'));
+  const finals=library.films.filter(f=>f.state==='final'&&!bookings.some(j=>j.id===f.id))
+    .map(f=>({...f,proposal:f.due,due:null,digest:f.video?.slice(6,-4)}));
+  const waiting=[...active.filter(j=>!j.due),...finals];
+  for(const [format,ids] of Object.entries(queueOrder.waiting)){
+    const same=waiting.filter(f=>f.format===format);
+    const ranked=[...new Set([...ids.map(id=>same.find(f=>f.id===id)).filter(Boolean),...same])];
+    let i=0;waiting.forEach((f,n)=>{if(f.format===format)waiting[n]=ranked[i++];});
+  }
+  const all=[...active.filter(j=>j.due),...waiting];
+  const movable=all.filter(j=>(!j.states||j.states.length&&j.states.every(s=>s==='queued'))&&(!j.due||Date.parse(j.due)>Date.now()+60000));
+  for(const job of all){
     const row=card(job);
-    const label=job.states.every(s=>s==='queued')?'מתוזמן':job.states.includes('needs_connection')?'נדרש חיבור לערוץ':'בתהליך פרסום';
-    row.append(element('small',label+' · '+stamp(job.due)+' (ישראל)'));
-    moveControls(row,job,scheduled);
+    row.dataset.song=job.id;
+    const label=job.states?.every(s=>s==='queued')?'מתוזמן':job.states?.includes('needs_connection')?'נדרש חיבור לערוץ':'בתהליך פרסום';
+    row.append(element('small','#'+(ready.length+1)+' · '+(job.due?label+' · '+stamp(job.due)+' (ישראל)':'ממתין למועד')));
+    moveControls(row,job,movable);
     if(job.asset){
       if(/^[a-f0-9]{64}$/.test(job.digest))row.append(mediaButton('media/'+job.digest+'.mp4','▶ צפייה בסרטון המתוזמן'));
       const link=element('a','הורדת הסרטון המתוזמן');
       link.href=job.asset;link.target='_blank';link.rel='noopener noreferrer';row.append(link);
-    }
+    }else if(job.video)row.append(mediaButton(job.video,'▶ צפייה בסרטון'));
     ready.push(row);
   }
   for(const item of library.songs){
@@ -280,16 +309,8 @@ function render(){
     if(item.versions.length)songs.push(row);
     else{row.prepend(element('small','טיוטת מילים לאישור'));drafts.push(row);}
   }
-  const waiting=library.films.filter(f=>f.state==='final'&&!bookings.some(j=>j.id===f.id));
-  const ordered=[...waiting];
-  for(const [format,ids] of Object.entries(queueOrder.waiting)){
-    const same=waiting.filter(f=>f.format===format);
-    const sorted=[...new Set([...ids.map(id=>same.find(f=>f.id===id)).filter(Boolean),...same])];
-    let i=0;
-    ordered.forEach((f,n)=>{if(f.format===format)ordered[n]=sorted[i++];});
-  }
-  for(const item of [...ordered,...library.films.filter(f=>!waiting.includes(f))]){
-    if(bookings.some(job=>job.id===item.id))continue;
+  for(const item of library.films){
+    if(bookings.some(job=>job.id===item.id)||item.state==='final')continue;
     const row=card(item), answer=decisions['film/'+item.id+'/'+item.revision];
     const state=item.state==='review' && answer ? (answer.action==='approve'?'final':'correction') : item.state;
     if(item.video)row.append(mediaButton(item.video,'▶ צפייה בסרטון'));
@@ -298,7 +319,7 @@ function render(){
       if(item.video)row.append(button('אישור הסרטון',()=>ask('approve',item)),button('בקשת תיקון',()=>ask('correct',item)));
       review.push(row);
     }else if(state==='final'){
-      moveControls(row,item,ordered);
+      row.append(element('small','האישור מסתנכרן עם הספרייה.'));
       if(item.due)row.append(element('small','מועד מוצע · '+stamp(item.due)+' (ישראל)'));ready.push(row);
     }else{
       const message=state==='error'?(item.issue||'הכנת הסרטון נעצרה.'):state==='correction'?'בתיקון · '+(answer?.note||item.note||''):'בהכנה';
@@ -325,6 +346,8 @@ function render(){
   fold.append(element('summary','כל הסרטונים שמחכים לאישור'),...(review.length>1?review.slice(1):[element('p',review.length?'הסקיצה מופיעה למעלה.':'כל הסקיצות נבדקו.','caption')]));
   panel.append(fold);reviewSection.append(panel);
   const queue=shelf('מוכנים לפרסום',ready,'התור ריק.',expanded('qbox'));queue.id='qbox';
+  const notice=element('small');notice.id='queueNotice';notice.setAttribute('role','status');
+  queue.querySelector('.release-list').prepend(notice);
   if(bookingError){
     const body=queue.querySelector('.release-list');
     if(!ready.length){body.replaceChildren();queue.querySelector('.count').textContent='—';}
