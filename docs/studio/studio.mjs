@@ -1,5 +1,5 @@
 import {renderReport,stamp} from './report.mjs?v=metric-deltas-2';
-import {openLyrics} from './lyrics-ui.mjs';
+import {openLyrics,renderTakes} from './lyrics-ui.mjs?v=suno-review-1';
 import {showInquiry} from './inquiry-ui.mjs?v=repair';
 
 const $ = id => document.getElementById(id);
@@ -262,13 +262,13 @@ function render(){
     const request=decisions['rerun/'+item.id+'/'+item.runRevision];
     const waiting=Boolean(item.rerunPending || (request&&!item.rerunMessage));
     function selectButton(v){
-      const b=button('בחירת '+v.label,()=>ask('select',item,v));b.disabled=waiting;return b;
+      const b=button('בחירה',()=>ask('select',item,v));b.disabled=waiting;return b;
     }
-    for(const v of item.versions){
+    if(item.versions.length)row.append(renderTakes(item.versions,v=>{
       const group=element('div',null,'version');
-      if(v.audio)group.append(mediaButton(v.audio,'▶ האזנה · '+v.label),selectButton(v));
+      if(v.audio)group.append(mediaButton(v.audio,'▶ האזנה'),selectButton(v));
       else if(/^[0-9a-f-]{36}$/.test(v.id)&&v.suno==='https://suno.com/song/'+v.id){
-        const listen=button('▶ האזנה ב־Suno · '+v.label,()=>{
+        const listen=button('▶ האזנה',()=>{
           stopPlayer();
           const frame=element('iframe');frame.title=item.title+' · '+v.label;
           frame.allow='autoplay';frame.src='https://suno.com/embed/'+v.id;
@@ -277,8 +277,8 @@ function render(){
         });
         group.append(listen,selectButton(v));
       }else group.append(element('small',v.label+' · הקובץ ממתין לסנכרון'));
-      row.append(group);
-    }
+      return group;
+    }));
     if(item.rerunnable){
       const rerun=button('שינוי ביצוע',()=>ask('rerun',item));
       rerun.disabled=Boolean(request)||item.rerunPending;row.append(rerun);
@@ -289,7 +289,7 @@ function render(){
         const d=item.lyricDraft;
         const suffix='/'+item.id+'/'+d.id+'/'+item.runRevision;
         const queued=decisions['rewrite'+suffix]||decisions['produce'+suffix];
-        const rewrite=button('שכתוב מילים',()=>openLyrics({...item,rerunPending:waiting||!!queued},item.rerunCost,async(action,draft,note)=>{
+        const rewrite=button(d.state==='ready'?'קריאה ואישור המילים':'שכתוב מילים',()=>openLyrics({...item,rerunPending:waiting||!!queued},item.rerunCost,async(action,draft,note)=>{
           await dispatch('mobile-review.yml',{action,song:item.id,revision:item.runRevision,version:draft,note});
           status('הבקשה נשלחה לסנכרון עם חדר העריכה.');
           for(let i=0;i<40;i++){
@@ -305,7 +305,7 @@ function render(){
     const replace=button('מחיקת רעיון ויצירת רעיון חדש',()=>ask('replace',item));
     const unrecordedDraft=item.runRevision==='initial'&&['ready','writing','error'].includes(item.lyricDraft?.state);
     replace.disabled=waiting||(!item.versions.length&&!unrecordedDraft)||item.versions.some(v=>v.suno!=='https://suno.com/song/'+v.id);
-    row.append(replace);
+    const more=element('details');more.append(element('summary','פעולות נוספות'),replace);row.append(more);
     if(item.versions.length)songs.push(row);
     else{row.prepend(element('small','טיוטת מילים לאישור'));drafts.push(row);}
   }

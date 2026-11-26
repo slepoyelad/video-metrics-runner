@@ -31,3 +31,42 @@ export function openLyrics(item,cost,submit){
   rewrite.onclick=()=>send('rewrite');if(approve)approve.onclick=()=>send('produce');
   document.body.append(dialog);dialog.onclose=()=>dialog.remove();dialog.showModal();
 }
+
+
+export function renderTakes(versions, renderTake){
+  const groups=new Map();
+  for(const version of versions){
+    const match=/(?:^| · )הרצה (\d+) · (.+)$/.exec(version.label||'');
+    const run=match?.[1]||'';
+    if(!groups.has(run))groups.set(run,[]);
+    groups.get(run).push({version,label:match?.[2]||version.label||'הקלטה'});
+  }
+  const panel=document.createElement('div');
+  panel.className='suno-takes';
+  const history=document.createElement('details');
+  const summary=document.createElement('summary');
+  history.append(summary);
+  let older=0;
+  for(const [run,takes] of groups){
+    const latest=panel.childElementCount===0;
+    const section=document.createElement('section');
+    const heading=document.createElement('strong');
+    heading.textContent=latest?'הביצועים האחרונים':run?'הרצה '+run:'הקלטות ראשונות';
+    section.append(heading);
+    for(const {version,label} of takes){
+      const line=document.createElement('div');
+      line.className='suno-take';
+      const name=document.createElement('span');
+      name.textContent=label;
+      line.append(name,renderTake(version));
+      section.append(line);
+    }
+    if(latest)panel.append(section);
+    else{history.append(section);older+=takes.length;}
+  }
+  if(older){
+    summary.textContent='הקלטות קודמות ('+older+')';
+    panel.append(history);
+  }
+  return panel;
+}

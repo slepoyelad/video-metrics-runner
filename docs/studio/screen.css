@@ -27,3 +27,13 @@
 .version .media-control{display:inline-block;vertical-align:top}
 textarea{display:block;margin:8px 0;width:100%;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:8px;font:inherit;padding:8px}
 .version iframe{width:100%;height:170px;max-height:40dvh;margin:6px 0;border:0;border-radius:10px}
+
+.suno-takes{display:grid;gap:.5rem;margin-block:.8rem}
+.suno-takes section{background:rgba(120,104,190,.08);border-radius:12px;padding:.75rem}
+.suno-takes section>strong{display:block;font-size:.88rem;margin-bottom:.4rem}
+.suno-take{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.4rem;padding:.3rem 0}
+.suno-take+.suno-take{border-top:1px solid rgba(145,135,180,.22)}
+.suno-take .version,.suno-take .take{display:flex;align-items:center;gap:.35rem;flex-wrap:wrap;border:0;padding:0;min-width:0}
+.suno-take button{margin:0;padding:.45rem .8rem}
+.suno-takes details section{margin-top:.5rem}
+.suno-takes summary,.suno-takes~details>summary{cursor:pointer;padding:.5rem 0;font-size:.88rem}
