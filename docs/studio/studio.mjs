@@ -1,4 +1,4 @@
-import {renderReport,stamp} from './report.mjs?v=metric-deltas-2';
+import {renderReport,stamp} from './report.mjs?v=ig-totals-1';
 import {openLyrics,renderTakes} from './lyrics-ui.mjs?v=suno-review-1';
 import {showInquiry} from './inquiry-ui.mjs?v=repair';
 

@@ -81,7 +81,16 @@ function platformMetricChange(key,row,prior){
 }
 function performance(r){
   const current=observation(r);
-  const points=[...(r.performanceHistory||r.history||[]).filter(p=>p.platforms&&Date.parse(p.at)<Date.parse(current.at)&&(!r.resetAt||Date.parse(p.at)>=Date.parse(r.resetAt))),current];
+  const points=[...(r.performanceHistory||r.history||[]).filter(p=>p.platforms&&Date.parse(p.at)<Date.parse(current.at)&&(!r.resetAt||Date.parse(p.at)>=Date.parse(r.resetAt))).map(p=>({...p})),current];
+  // Insights-only counts and all-surface counts cannot form one growth series.
+  if(r.instagramCountBasis==='media-total'){
+    for(const point of points.slice(0,-1)){
+      const ig=point.platforms.instagram;
+      if(ig && ig.countBasis!=='media-total'){
+        point.platforms={...point.platforms,instagram:{...ig,views:null,reactions:null,comments:null}};
+      }
+    }
+  }
   const previous=points.at(-2);
   const columns=Object.keys(metricNames);
   const rows=platforms.map(s=>{
@@ -104,7 +113,8 @@ function performance(r){
     const expired=c.measurementErrors?.includes('Meta 401/190/463');
     return '<p class="caption">* '+platformNames[c.service]+' · '+(expired?'פג תוקף החיבור. ':'')+'הנתונים המסומנים נשמרו ממדידה קודמת'+(times.length?' ב־'+stamp(times[0]):'')+'.</p>';
   }).join('');
-  const note=freshness+(missing.length?'<p class="caption">טרם התקבל מספר עוקבים מ־'+missing.map(s=>platformNames[s]).join(' ומ־')+'.</p>':'');
+  const basis=r.instagramCountBasis==='media-total'?'<p class="caption">אינסטגרם · מוני הרילים כוללים פעילות אורגנית וממומנת. נתוני הצפיות הקודמים חושבו בשיטה אחרת.</p>':'';
+  const note=basis+freshness+(missing.length?'<p class="caption">טרם התקבל מספר עוקבים מ־'+missing.map(s=>platformNames[s]).join(' ומ־')+'.</p>':'');
   const table='<div class="table-wrap"><table aria-label="ביצועים לפי פלטפורמה"><thead><tr><th>פלטפורמה</th>'+Object.values(metricNames).map(v=>'<th>'+v+'</th>').join('')+'</tr></thead><tbody>'+rows+'</tbody></table>'+note+'</div>';
   const legend=platforms.map(s=>'<span><i class="pf-dot '+s+'"></i>'+platformNames[s]+'</span>').join('');
   return '<section id="numbers" class="pf">'+analysis+'<h2>המספרים</h2><div class="kpis">'+cards+'</div><p class="caption">'+(previous?'השינוי לעומת העדכון הקודם · ':'')+'מדידה אחרונה '+stamp(current.at)+'</p>'+table+'<details class="fold"><summary>גרפים: צפיות ועוקבים לאורך זמן</summary><div class="inside"><div class="pf-legend">'+legend+'</div>'+chart(points,'views')+chart(points,'followers')+'</div></details></section>';
@@ -124,8 +134,10 @@ export function renderReport(r){
     const p=posts[0],track=production.find(t=>t.title===p.clipTitle);
     const links=posts.map(post=>{
       const url=href(post.externalLink,hosts[post.service]||[]);
-      const views=post.metrics?.find(m=>m.type==='views'&&Number.isFinite(m.value))?.value;
-      const label='<i class="dot '+esc(post.service)+'"></i>'+esc(services[post.service]||post.service)+(views!=null?' · '+formatted(views)+' צפיות':'');
+      const viewMetric=post.metrics?.find(m=>m.type==='views'&&Number.isFinite(m.value));
+      const views=viewMetric?.value;
+      const detail=post.service==='instagram'&&viewMetric?' · '+(viewMetric.source==='instagram-media-total'?'מונה כולל':'Insights')+' · '+stamp(viewMetric.observedAt):'';
+      const label='<i class="dot '+esc(post.service)+'"></i>'+esc(services[post.service]||post.service)+(views!=null?' · '+formatted(views)+' צפיות'+detail:'');
       return url?'<a class="chip" target="_blank" rel="noopener noreferrer" href="'+url+'">'+label+'</a>':'<span class="chip">'+label+'</span>';
     }).join('')+r.channels.filter(c=>!posts.some(post=>post.service===c.service)).flatMap(c=>
       (c.deliveries||[]).filter(d=>d.clipId===p.clipId).map(d=>'<span class="chip">'+esc(services[c.service])+' · '+
